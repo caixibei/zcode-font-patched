@@ -9,8 +9,8 @@ ZCode 桌面客户端 UI 字体美化补丁。
 
 通过**等长字节替换**修改 ZCode 安装目录下 `resources/app.asar` 中的 Tailwind 根字体变量（`--font-sans` / `--font-mono`），两个变量使用各自独立的优先级栈（首个已安装的字体族命中）：
 
-- **`--font-sans`（界面正文）**：LXGW WenKai（霞鹜文楷）→ HarmonyOS Sans SC → Source Han Sans SC（思源黑体）→ Noto Sans SC → HarmonyOS Sans → MiSans
-- **`--font-mono`（代码 / 等宽）**：Anthropic Mono Variable → LXGW WenKai（汉字由它渲染）→ JetBrains Mono
+- **`--font-sans`（界面正文）**：LXGW WenKai（霞鹜文楷）→ PingFang SC（苹方）→ HarmonyOS Sans SC → Source Han Sans SC（思源黑体）→ Noto Sans SC → HarmonyOS Sans → MiSans
+- **`--font-mono`（代码 / 等宽）**：Anthropic Mono Variable → PingFang SC（汉字由它渲染）→ JetBrains Mono → LXGW WenKai
 
 无需重装客户端，可随时一键还原。
 
@@ -54,13 +54,14 @@ ZCode 桌面客户端 UI 字体美化补丁。
 
 补丁写入的字体族名（按命中优先级）：
 
-- `--font-sans`：`LXGW WenKai` → `HarmonyOS Sans SC` → `Source Han Sans SC` → `Noto Sans SC` → `HarmonyOS Sans` → `MiSans`
-- `--font-mono`：`Anthropic Mono Variable` → `LXGW WenKai` → `JetBrains Mono`
+- `--font-sans`：`LXGW WenKai` → `PingFang SC` → `HarmonyOS Sans SC` → `Source Han Sans SC` → `Noto Sans SC` → `HarmonyOS Sans` → `MiSans`（此栈因等长窗口限制使用无空格逗号分隔，语义与带空格写法完全相同）
+- `--font-mono`：`Anthropic Mono Variable` → `PingFang SC` → `JetBrains Mono` → `LXGW WenKai`
 
 CSS 按**字体族名**精确匹配，系统里需安装同名族名的字体文件才会命中，例如：
 
 - Anthropic Mono 可变字体（族名 `Anthropic Mono Variable`）
 - 霞鹜文楷（族名 `LXGW WenKai`，注意不是连写的 `LXGWWenKai`）
+- 苹方（族名 `PingFang SC`）
 - JetBrains Mono（族名 `JetBrains Mono`）
 
 > 注意：`fonts/` 中静态字体安装后注册的族名可能与补丁引用的族名不同（如 `Anthropic Mono Web`、`思源黑体`），不会直接命中补丁字体栈。`fonts/` 目录用于留存与分发字体资源；如需实际命中补丁效果，请安装族名匹配的字体版本。
