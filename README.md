@@ -7,12 +7,18 @@
 
 ZCode 桌面客户端 UI 字体美化补丁。
 
-通过**等长字节替换**修改 ZCode 安装目录下 `resources/app.asar` 中的 Tailwind 根字体变量（`--font-sans` / `--font-mono`），把界面英文字体换成 Anthropic Mono，中文回退到 Noto Sans SC / 思源黑体。无需重装客户端，可随时一键还原。
+通过**等长字节替换**修改 ZCode 安装目录下 `resources/app.asar` 中的 Tailwind 根字体变量（`--font-sans` / `--font-mono`），把界面英文字体换成 Anthropic Mono，中文按以下优先级回退（首个已安装的字体族命中）：
+
+**Anthropic Mono Variable → MiSans → HarmonyOS Sans SC → Source Han Sans SC（思源黑体）→ Noto Sans SC → HarmonyOS Sans**
+
+无需重装客户端，可随时一键还原。
 
 | 字体变量 | 补丁前 | 补丁后 |
 | --- | --- | --- |
-| `--font-sans`（界面正文） | `ui-sans-serif, system-ui, ...` 系统默认栈 | `"Anthropic Mono Variable"` → `"Noto Sans SC"` |
-| `--font-mono`（代码 / 等宽） | `ui-monospace, SFMono-Regular, ..., "Microsoft YaHei UI", ...` | `"Anthropic Mono Variable"` → `"Noto Sans SC"` |
+| `--font-sans`（界面正文） | `ui-sans-serif, system-ui, ...` 系统默认栈 | 六级优先栈（见上） |
+| `--font-mono`（代码 / 等宽） | `ui-monospace, SFMono-Regular, ..., "Microsoft YaHei UI", ...` | 六级优先栈（见上） |
+
+> 注：等长替换窗口有限，补丁后的字体栈不再包含 `Segoe UI Emoji` / `Noto Color Emoji`；emoji 在 Chromium 渲染管线中仍会通过系统回退链正常显示，不受影响。
 
 ## 环境要求
 
@@ -50,7 +56,7 @@ ZCode 桌面客户端 UI 字体美化补丁。
 | `Anthropic Mono Web.otf`、`Anthropic Mono Web Regular Italic.otf` | Anthropic Mono 网页版（Regular / Italic） |
 | `SourceHanSansSC-ExtraLight / Light / Normal / Regular / Medium / Bold / Heavy .otf` | 思源黑体全字重 |
 
-补丁写入的字体族名为 `Anthropic Mono Variable`（英文）与 `Noto Sans SC`（中文回退）。CSS 按**字体族名**匹配，系统里需安装同名族名的字体文件才会命中：
+补丁写入的字体族名优先级：`Anthropic Mono Variable` → `MiSans` → `HarmonyOS Sans SC` → `Source Han Sans SC` → `Noto Sans SC` → `HarmonyOS Sans`。CSS 按**字体族名**匹配，系统里需安装同名族名的字体文件才会命中：
 
 - Anthropic Mono 可变字体（族名 `Anthropic Mono Variable`）
 - Noto Sans SC 可变字体（族名 `Noto Sans SC`）

@@ -1,12 +1,16 @@
 # ZCode desktop UI font patch (v3, portable)
 # - Auto-locates ZCode install (running process / registry / common dirs / manual input);
 #   every probe is fault-tolerant, a missing drive or path never aborts the search
-# - Patches Tailwind root vars --font-sans / --font-mono inside app.asar:
-#   English -> "Anthropic Mono Variable", CJK fallback -> "Noto Sans SC"
+# - Patches Tailwind root vars --font-sans / --font-mono inside app.asar with the
+#   user-specified priority stack (first installed family wins, CJK falls through):
+#   "Anthropic Mono Variable" -> "MiSans" -> "HarmonyOS Sans SC"
+#   -> "Source Han Sans SC" -> "Noto Sans SC" -> "HarmonyOS Sans"
+#   (emoji fonts omitted: Chromium still renders emoji via its own system fallback)
 # - Equal-length byte replacement: asar header offsets/sizes stay intact
-# - Backup = exact pre-patch state of THIS machine's app.asar; if the existing
-#   backup does not match (kit copied from another machine, or ZCode updated),
-#   it is silently re-created before patching
+# - Backup = clean original asar of THIS machine; state is detected BEFORE any
+#   backup decision, so an existing clean backup is never overwritten by a
+#   patched asar; a missing/invalid backup is self-healed by reverse replacement
+# - Upgrades v1/v2 patch layouts in place; idempotent when already v3
 # - Exits automatically on success; pauses only on errors
 # Revert with restore-zcode-font.bat
 $ErrorActionPreference = 'Stop'
@@ -19,9 +23,9 @@ $hashPath   = Join-Path $PSScriptRoot 'app.asar.font-backup.sha256'
 $oldSans = '--font-sans:ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";'
 $oldMono = '--font-mono:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", monospace;'
 
-# ---- patched strings: Anthropic Mono first, Noto Sans SC as CJK fallback ----
-$newSans = '--font-sans:"Anthropic Mono Variable", "Noto Sans SC", "Segoe UI Emoji", "Noto Color Emoji";'
-$newMono = '--font-mono:"Anthropic Mono Variable", "Noto Sans SC", "Segoe UI Emoji", "Noto Color Emoji";'
+# ---- patched strings (v3): user-specified priority stack ----
+$newSans = '--font-sans:"Anthropic Mono Variable", "MiSans", "HarmonyOS Sans SC", "Source Han Sans SC", "Noto Sans SC", "HarmonyOS Sans";'
+$newMono = '--font-mono:"Anthropic Mono Variable", "MiSans", "HarmonyOS Sans SC", "Source Han Sans SC", "Noto Sans SC", "HarmonyOS Sans";'
 
 function Pad-To([string]$old, [string]$new) {
     if ($new.Length -gt $old.Length) { throw "new string longer than old, cannot pad: $($new.Length) > $($old.Length)" }
@@ -32,10 +36,19 @@ function Pad-To([string]$old, [string]$new) {
 $newSans = Pad-To $oldSans $newSans
 $newMono = Pad-To $oldMono $newMono
 
-# ---- v1 patch strings (previous kit version, English-only change) ----
-# v1 wrote these padded to equal length the same way, so reproduce that exactly
+# ---- legacy patch strings (v1 / v2 kit versions), padded exactly as they were written ----
 $v1Sans = Pad-To $oldSans '--font-sans:"Anthropic Mono Variable", system-ui, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";'
 $v1Mono = Pad-To $oldMono '--font-mono:"Anthropic Mono Variable", Consolas, "Liberation Mono", "Courier New", "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", monospace;'
+$v2Sans = Pad-To $oldSans '--font-sans:"Anthropic Mono Variable", "Noto Sans SC", "Segoe UI Emoji", "Noto Color Emoji";'
+$v2Mono = Pad-To $oldMono '--font-mono:"Anthropic Mono Variable", "Noto Sans SC", "Segoe UI Emoji", "Noto Color Emoji";'
+
+function Count-Str([string]$hay, [string]$s) {
+    return ([regex]::Matches($hay, [regex]::Escape($s))).Count
+}
+function Hash-Bytes([byte[]]$b) {
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    try { return (($sha.ComputeHash($b) | ForEach-Object { $_.ToString('X2') }) -join '') } finally { $sha.Dispose() }
+}
 
 function Find-ZCodeDir {
     # 1) running process path
@@ -56,7 +69,7 @@ function Find-ZCodeDir {
             }
         } catch {}
     }
-    # 3) common dirs; Join-Path with an absent drive throws, so test the drive first
+    # 3) common dirs; Join-Path with an absent drive throws, so test the path first
     $candidates = @('D:\installer\zcode', "$env:LOCALAPPDATA\Programs\zcode", "$env:ProgramFiles\zcode", "${env:ProgramFiles(x86)}\zcode")
     foreach ($d in $candidates) {
         try {
@@ -93,65 +106,101 @@ if ($procs) {
     exit 1
 }
 
-# 1) read asar first (need it both for backup and assertions)
-$bytes = [System.IO.File]::ReadAllBytes($asarPath)
-$text  = $latin1.GetString($bytes)
-$asarHash = (Get-FileHash $asarPath -Algorithm SHA256).Hash
+# 1) read current asar and detect its state BEFORE touching any backup
+$bytes    = [System.IO.File]::ReadAllBytes($asarPath)
+$text     = $latin1.GetString($bytes)
+$asarHash = Hash-Bytes $bytes
 
-# 2) backup policy: backup must always equal the CURRENT pre-patch asar of this machine
-$needNewBackup = $true
-if ((Test-Path $backupPath) -and (Test-Path $hashPath)) {
-    $expect = (Get-Content $hashPath -ErrorAction SilentlyContinue)
-    $actual = (Get-FileHash $backupPath -Algorithm SHA256).Hash
-    if ($expect -and ($actual -eq $expect.Trim()) -and ($actual -eq $asarHash)) {
-        $needNewBackup = $false
-        Write-Host '[1/4] backup matches current app.asar'
-    } elseif ($actual -eq $asarHash) {
-        $needNewBackup = $false
-        [System.IO.File]::WriteAllText($hashPath, $actual)
-        Write-Host '[1/4] backup matches current app.asar (sidecar refreshed)'
-    }
-}
-if ($needNewBackup) {
-    Copy-Item $asarPath $backupPath -Force
-    [System.IO.File]::WriteAllText($hashPath, $asarHash)
-    Write-Host '[1/4] backup (re)created from current app.asar'
-}
+$cOldSans = Count-Str $text $oldSans
+$cOldMono = Count-Str $text $oldMono
+$cV1Sans  = Count-Str $text $v1Sans
+$cV1Mono  = Count-Str $text $v1Mono
+$cV2Sans  = Count-Str $text $v2Sans
+$cV2Mono  = Count-Str $text $v2Mono
+$cNewSans = Count-Str $text ($newSans.TrimEnd(';').TrimEnd())
 
-# 3) state detection: unpatched / v1-patched (upgrade to v2) / v2-patched (idempotent)
-$cOldSans = ([regex]::Matches($text, [regex]::Escape($oldSans))).Count
-$cOldMono = ([regex]::Matches($text, [regex]::Escape($oldMono))).Count
-$cV1Sans  = ([regex]::Matches($text, [regex]::Escape($v1Sans))).Count
-$cV1Mono  = ([regex]::Matches($text, [regex]::Escape($v1Mono))).Count
-$cNewSans = ([regex]::Matches($text, [regex]::Escape($newSans.TrimEnd().TrimEnd(';')))).Count
-if ($cOldSans -eq 1 -and $cOldMono -eq 1) {
-    Write-Host '[2/4] state: unpatched, applying patch'
-} elseif ($cV1Sans -eq 1 -and $cV1Mono -eq 1) {
-    Write-Host '[2/4] state: v1 patch detected, upgrading to v2 (restore backup first)'
-    $bytes = [System.IO.File]::ReadAllBytes($backupPath)
-    $text  = $latin1.GetString($bytes)
-    if (([regex]::Matches($text, [regex]::Escape($oldSans))).Count -ne 1 -or ([regex]::Matches($text, [regex]::Escape($oldMono))).Count -ne 1) {
-        throw 'v1 detected but backup is not a clean original, refusing.'
+$isUnpatched = ($cOldSans -eq 1 -and $cOldMono -eq 1)
+$isV1        = ($cV1Sans -eq 1 -and $cV1Mono -eq 1)
+$isV2        = ($cV2Sans -eq 1 -and $cV2Mono -eq 1)
+$isV3        = ($cNewSans -ge 1 -and $cOldSans -eq 0 -and $cV1Sans -eq 0 -and $cV2Sans -eq 0)
+
+# 2) determine the clean baseline asar (what the backup must contain)
+$baseText = $null
+if ($isUnpatched) {
+    Write-Host '[1/4] state: unpatched'
+    $baseText = $text
+} elseif ($isV1 -or $isV2 -or $isV3) {
+    if ($isV1) { Write-Host '[1/4] state: v1 patch detected (upgrade)' }
+    elseif ($isV2) { Write-Host '[1/4] state: v2 patch detected (upgrade)' }
+    else { Write-Host '[1/4] state: v3 patch detected' }
+    # baseline = existing backup if it verifies as a clean original...
+    if (Test-Path $backupPath) {
+        $sidecarOk = $false
+        if (Test-Path $hashPath) {
+            $expect = (Get-Content $hashPath -ErrorAction SilentlyContinue)
+            $actual = (Get-FileHash $backupPath -Algorithm SHA256).Hash
+            $sidecarOk = ($expect -and ($actual -eq $expect.Trim()))
+        }
+        if ($sidecarOk) {
+            $bt = $latin1.GetString([System.IO.File]::ReadAllBytes($backupPath))
+            if ((Count-Str $bt $oldSans) -eq 1 -and (Count-Str $bt $oldMono) -eq 1) {
+                $baseText = $bt
+                Write-Host '[2/4] clean backup verified'
+            }
+        }
     }
-} elseif ($cNewSans -ge 1 -and $cOldSans -eq 0 -and $cV1Sans -eq 0) {
-    Write-Host '[2/4] state: already v2 patched, nothing to do'
-    if ($zcodeExe) { Start-Process $zcodeExe }
-    exit 0
+    # ...otherwise self-heal: reverse the known patch strings to rebuild the clean original
+    if (-not $baseText) {
+        $rt = $text
+        foreach ($pair in @(($v1Sans, $oldSans), ($v1Mono, $oldMono), ($v2Sans, $oldSans), ($v2Mono, $oldMono), ($newSans, $oldSans), ($newMono, $oldMono))) {
+            $rt = $rt.Replace($pair[0], $pair[1])
+        }
+        if ((Count-Str $rt $oldSans) -ne 1 -or (Count-Str $rt $oldMono) -ne 1) {
+            throw 'clean backup missing/invalid and cannot be reconstructed from the patched asar; refusing.'
+        }
+        $baseText = $rt
+        Write-Host '[2/4] clean backup missing/invalid, reconstructed from patched asar'
+    }
 } else {
-    throw "unknown asar state (oldSans=$cOldSans oldMono=$cOldMono v1Sans=$cV1Sans v1Mono=$cV1Mono). Version changed? Refusing."
+    throw "unknown asar state (oldSans=$cOldSans oldMono=$cOldMono v1Sans=$cV1Sans v1Mono=$cV1Mono v2Sans=$cV2Sans v2Mono=$cV2Mono v3=$cNewSans). Version changed? Refusing."
+}
+$baseBytes = $latin1.GetBytes($baseText)
+$baseHash  = Hash-Bytes $baseBytes
+
+# 3) make the backup equal the clean baseline (never the patched state)
+$needBackupWrite = $true
+if (Test-Path $backupPath) {
+    if ((Get-FileHash $backupPath -Algorithm SHA256).Hash -eq $baseHash) {
+        $needBackupWrite = $false
+    }
+}
+if ($needBackupWrite) {
+    [System.IO.File]::WriteAllBytes($backupPath, $baseBytes)
+    [System.IO.File]::WriteAllText($hashPath, $baseHash)
+    Write-Host '[2/4] backup (re)created from clean baseline'
+} elseif (-not (Test-Path $hashPath) -or (Get-Content $hashPath -ErrorAction SilentlyContinue).Trim() -ne $baseHash) {
+    [System.IO.File]::WriteAllText($hashPath, $baseHash)
+    Write-Host '[2/4] backup verified (sidecar refreshed)'
 }
 
-# 4) equal-length replace + verify
-$patched  = $text.Replace($oldSans, $newSans).Replace($oldMono, $newMono)
+# 4) apply v3 stack onto the baseline and write only if content changes
+$patched  = $baseText.Replace($oldSans, $newSans).Replace($oldMono, $newMono)
 $newBytes = $latin1.GetBytes($patched)
-if ($newBytes.Length -ne $bytes.Length) { throw "length changed: $($bytes.Length) -> $($newBytes.Length), refusing to write." }
-if (([regex]::Matches($patched, [regex]::Escape($oldSans))).Count -ne 0) { throw 'old sans still present after replace.' }
-[System.IO.File]::WriteAllBytes($asarPath, $newBytes)
-Write-Host '[3/4] patch written (equal-length, size unchanged)'
+if ($newBytes.Length -ne $baseBytes.Length) { throw "length changed: $($baseBytes.Length) -> $($newBytes.Length), refusing to write." }
+if ((Count-Str $patched $oldSans) -ne 0) { throw 'old sans still present after replace.' }
+if ((Count-Str $patched ($newSans.TrimEnd(';').TrimEnd())) -lt 1) { throw 'new sans missing after replace.' }
+
+if ((Hash-Bytes $newBytes) -eq $asarHash) {
+    Write-Host '[3/4] asar already carries the v3 stack, nothing to write'
+} else {
+    [System.IO.File]::WriteAllBytes($asarPath, $newBytes)
+    Write-Host '[3/4] patch written (equal-length, size unchanged)'
+}
 
 if ($zcodeExe) {
     Start-Process $zcodeExe
-    Write-Host '[4/4] ZCode restarted. English: Anthropic Mono Variable, CJK: Noto Sans SC.'
+    Write-Host '[4/4] ZCode restarted.'
 } else {
-    Write-Host '[4/4] done. Start ZCode manually. English: Anthropic Mono Variable, CJK: Noto Sans SC.'
+    Write-Host '[4/4] done. Start ZCode manually.'
 }
+Write-Host 'Stack: "Anthropic Mono Variable" -> "MiSans" -> "HarmonyOS Sans SC" -> "Source Han Sans SC" -> "Noto Sans SC" -> "HarmonyOS Sans".'

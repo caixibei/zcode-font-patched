@@ -74,6 +74,17 @@ if (Test-Path $hashPath) {
     }
 }
 
+# the backup must be a clean unpatched asar, never a patched one
+$latin1 = [System.Text.Encoding]::GetEncoding(28591)
+$bt = $latin1.GetString([System.IO.File]::ReadAllBytes($backupPath))
+$oldSans = '--font-sans:ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";'
+$oldMono = '--font-mono:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", monospace;'
+if (([regex]::Matches($bt, [regex]::Escape($oldSans))).Count -ne 1 -or ([regex]::Matches($bt, [regex]::Escape($oldMono))).Count -ne 1) {
+    Write-Host '[X] backup is not a clean original asar (looks patched or from a different ZCode version), refusing to overwrite.' -ForegroundColor Red
+    Read-Host 'Press Enter to exit'
+    exit 1
+}
+
 Copy-Item $backupPath $asarPath -Force
 Write-Host '[OK] app.asar restored.'
 if ($zcodeExe) {
