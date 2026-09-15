@@ -7,16 +7,12 @@
 
 ZCode 桌面客户端 UI 字体美化补丁。
 
-通过**等长字节替换**修改 ZCode 安装目录下 `resources/app.asar` 中的 Tailwind 根字体变量（`--font-sans` / `--font-mono`），把界面英文字体换成 Anthropic Mono，中文按以下优先级回退（首个已安装的字体族命中）：
+通过**等长字节替换**修改 ZCode 安装目录下 `resources/app.asar` 中的 Tailwind 根字体变量（`--font-sans` / `--font-mono`），两个变量使用各自独立的优先级栈（首个已安装的字体族命中）：
 
-**Anthropic Mono Variable → MiSans → HarmonyOS Sans SC → Source Han Sans SC（思源黑体）→ Noto Sans SC → HarmonyOS Sans**
+- **`--font-sans`（界面正文）**：LXGW WenKai（霞鹜文楷）→ HarmonyOS Sans SC → Source Han Sans SC（思源黑体）→ Noto Sans SC → HarmonyOS Sans → MiSans
+- **`--font-mono`（代码 / 等宽）**：Anthropic Mono Variable → LXGW WenKai（汉字由它渲染）→ JetBrains Mono
 
 无需重装客户端，可随时一键还原。
-
-| 字体变量 | 补丁前 | 补丁后 |
-| --- | --- | --- |
-| `--font-sans`（界面正文） | `ui-sans-serif, system-ui, ...` 系统默认栈 | 六级优先栈（见上） |
-| `--font-mono`（代码 / 等宽） | `ui-monospace, SFMono-Regular, ..., "Microsoft YaHei UI", ...` | 六级优先栈（见上） |
 
 > 注：等长替换窗口有限，补丁后的字体栈不再包含 `Segoe UI Emoji` / `Noto Color Emoji`；emoji 在 Chromium 渲染管线中仍会通过系统回退链正常显示，不受影响。
 
@@ -56,12 +52,18 @@ ZCode 桌面客户端 UI 字体美化补丁。
 | `Anthropic Mono Web.otf`、`Anthropic Mono Web Regular Italic.otf` | Anthropic Mono 网页版（Regular / Italic） |
 | `SourceHanSansSC-ExtraLight / Light / Normal / Regular / Medium / Bold / Heavy .otf` | 思源黑体全字重 |
 
-补丁写入的字体族名优先级：`Anthropic Mono Variable` → `MiSans` → `HarmonyOS Sans SC` → `Source Han Sans SC` → `Noto Sans SC` → `HarmonyOS Sans`。CSS 按**字体族名**匹配，系统里需安装同名族名的字体文件才会命中：
+补丁写入的字体族名（按命中优先级）：
+
+- `--font-sans`：`LXGW WenKai` → `HarmonyOS Sans SC` → `Source Han Sans SC` → `Noto Sans SC` → `HarmonyOS Sans` → `MiSans`
+- `--font-mono`：`Anthropic Mono Variable` → `LXGW WenKai` → `JetBrains Mono`
+
+CSS 按**字体族名**精确匹配，系统里需安装同名族名的字体文件才会命中，例如：
 
 - Anthropic Mono 可变字体（族名 `Anthropic Mono Variable`）
-- Noto Sans SC 可变字体（族名 `Noto Sans SC`）
+- 霞鹜文楷（族名 `LXGW WenKai`，注意不是连写的 `LXGWWenKai`）
+- JetBrains Mono（族名 `JetBrains Mono`）
 
-> 注意：`fonts/` 中静态字体安装后注册的族名是 `Anthropic Mono Web` 与 `思源黑体`，与补丁引用的族名不同，不会直接命中补丁字体栈。`fonts/` 目录用于留存与分发字体资源；如需实际命中补丁效果，请安装对应**可变字体**版本。
+> 注意：`fonts/` 中静态字体安装后注册的族名可能与补丁引用的族名不同（如 `Anthropic Mono Web`、`思源黑体`），不会直接命中补丁字体栈。`fonts/` 目录用于留存与分发字体资源；如需实际命中补丁效果，请安装族名匹配的字体版本。
 
 ## 文件清单
 
