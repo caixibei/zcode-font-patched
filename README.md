@@ -9,8 +9,8 @@ ZCode 桌面客户端 UI 字体美化补丁。
 
 通过**等长字节替换**修改 ZCode 安装目录下 `resources/app.asar` 中的 Tailwind 根字体变量（`--font-sans` / `--font-mono`），两个变量使用各自独立的优先级栈（首个已安装的字体族命中）：
 
-- **`--font-sans`（界面正文）**：LXGW WenKai（霞鹜文楷）→ PingFang SC（苹方）→ HarmonyOS Sans SC → Source Han Sans SC（思源黑体）→ Noto Sans SC → HarmonyOS Sans → MiSans
-- **`--font-mono`（代码 / 等宽）**：Anthropic Mono Variable → PingFang SC（汉字由它渲染）→ JetBrains Mono → LXGW WenKai
+- **`--font-sans`（界面正文）**：AnthropicSans（英文）→ LXGW WenKai（霞鹜文楷，汉字）→ PingFang SC（苹方）→ HarmonyOS Sans SC → Source Han Sans SC（思源黑体）→ Noto Sans SC → MiSans
+- **`--font-mono`（代码 / 等宽）**：AnthropicMono（英文）→ Anthropic Mono Variable → PingFang SC（汉字由它渲染）→ JetBrains Mono → LXGW WenKai
 
 无需重装客户端，可随时一键还原。
 
@@ -45,21 +45,31 @@ ZCode 桌面客户端 UI 字体美化补丁。
 
 ## 字体说明
 
-`fonts/` 目录附带字体资源：
+`fonts/` 目录附带全部字体资源压缩包，需解压后安装：
 
-| 文件 | 字体 |
-| --- | --- |
-| `Anthropic Mono Web.otf`、`Anthropic Mono Web Regular Italic.otf` | Anthropic Mono 网页版（Regular / Italic） |
-| `SourceHanSansSC-ExtraLight / Light / Normal / Regular / Medium / Bold / Heavy .otf` | 思源黑体全字重 |
+| 压缩包 | 内容 | 对应补丁栈字体族 |
+| --- | --- | --- |
+| `Anthropic Sans.zip` | AnthropicSans 静态字体 14 款（Light ~ Black，含斜体） | `AnthropicSans`（sans 首位，英文） |
+| `Anthropic Mono.zip` | AnthropicMono 静态字体 7 字重 + AnthropicMonoVariable 可变字体 | `AnthropicMono`（mono 首位，英文）、`Anthropic Mono Variable` |
+| `Anthropic Serif.zip` | AnthropicSerif 静态字体 14 款（Light ~ Black，含斜体） | 备用资源，不在补丁栈内 |
+| `LXGWWenKai.zip` | 霞鹜文楷 Regular | `LXGW WenKai`（sans 汉字首选） |
+| `PingFang SC.zip` | 苹方 SC（ttf / woff2，Thin ~ Semibold） | `PingFang SC` |
+| `HarmonyOS-Sans.zip` | HarmonyOS Sans 全家族（含 SC / TC / Condensed / Naskh Arabic） | `HarmonyOS Sans SC` |
+| `SourceHanSansSC.zip` | 思源黑体 SC 全字重（ExtraLight ~ Heavy） | `Source Han Sans SC` |
+| `MiSans.zip` | MiSans 全字重 + 可变字体 | `MiSans` |
+| `JetBrainsMono-2.304.zip` | JetBrains Mono v2.304（ttf / woff2 / 可变字体） | `JetBrains Mono`（mono 栈） |
 
 补丁写入的字体族名（按命中优先级）：
 
-- `--font-sans`：`LXGW WenKai` → `PingFang SC` → `HarmonyOS Sans SC` → `Source Han Sans SC` → `Noto Sans SC` → `HarmonyOS Sans` → `MiSans`（此栈因等长窗口限制使用无空格逗号分隔，语义与带空格写法完全相同）
-- `--font-mono`：`Anthropic Mono Variable` → `PingFang SC` → `JetBrains Mono` → `LXGW WenKai`
+- `--font-sans`：`AnthropicSans` → `LXGW WenKai` → `PingFang SC` → `HarmonyOS Sans SC` → `Source Han Sans SC` → `Noto Sans SC` → `MiSans`
+- `--font-mono`：`AnthropicMono` → `Anthropic Mono Variable` → `PingFang SC` → `JetBrains Mono` → `LXGW WenKai`
+
+> 注：原始 8 级 sans 栈（含 `HarmonyOS Sans` 无 SC 版）超出 127 字符等长窗口 7 字符，物理无法写入；末位 `HarmonyOS Sans` 排在六个中文字体之后实际不可达，故删除，`HarmonyOS Sans SC` 仍在栈内。无空格字体族（`AnthropicSans`、`MiSans`）与无空格逗号分隔均为 CSS 合法写法。
 
 CSS 按**字体族名**精确匹配，系统里需安装同名族名的字体文件才会命中，例如：
 
-- Anthropic Mono 可变字体（族名 `Anthropic Mono Variable`）
+- AnthropicSans 静态族（族名 `AnthropicSans`，14 款，Light ~ Black）
+- AnthropicMono 静态族（族名 `AnthropicMono`）
 - 霞鹜文楷（族名 `LXGW WenKai`，注意不是连写的 `LXGWWenKai`）
 - 苹方（族名 `PingFang SC`）
 - JetBrains Mono（族名 `JetBrains Mono`）
@@ -72,7 +82,7 @@ CSS 按**字体族名**精确匹配，系统里需安装同名族名的字体文
 | --- | --- |
 | `patch-zcode-font.bat` / `patch-zcode-font.ps1` | 打补丁入口（bat 双击后调用同名 ps1） |
 | `restore-zcode-font.bat` / `restore-zcode-font.ps1` | 还原入口 |
-| `fonts/*.otf` | 字体资源，见「字体说明」 |
+| `fonts/*.zip` | 字体资源压缩包，需解压安装，见「字体说明」 |
 | `app.asar.font-backup.sha256` | 备份 SHA-256 指纹 |
 | `app.asar.font-backup` | 首次打补丁时在本机生成的原始 asar 备份（体积大，已被 `.gitignore` 排除，不入库） |
 
