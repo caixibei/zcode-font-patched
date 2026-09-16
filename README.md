@@ -2,8 +2,23 @@
 
 ![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D4?logo=windows11&logoColor=white)
 ![PowerShell](https://img.shields.io/badge/PowerShell-5.1%2B-5391FE?logo=powershell&logoColor=white)
+![GitHub top language](https://img.shields.io/github/languages/top/caixibei/zcode-font-patched)
+
 ![GitHub stars](https://img.shields.io/github/stars/caixibei/zcode-font-patched?style=social)
-![Last commit](https://img.shields.io/github/last-commit/caixibei/zcode-font-patched)
+![GitHub forks](https://img.shields.io/github/forks/caixibei/zcode-font-patched?style=social)
+![GitHub watchers](https://img.shields.io/github/watchers/caixibei/zcode-font-patched?style=social)
+![GitHub contributors](https://img.shields.io/github/contributors/caixibei/zcode-font-patched)
+
+![GitHub issues](https://img.shields.io/github/issues/caixibei/zcode-font-patched)
+![GitHub closed issues](https://img.shields.io/github/issues-closed/caixibei/zcode-font-patched?color=success)
+![GitHub PRs](https://img.shields.io/github/issues-pr/caixibei/zcode-font-patched)
+![GitHub closed PRs](https://img.shields.io/github/issues-pr-closed/caixibei/zcode-font-patched?color=success)
+
+![GitHub last commit](https://img.shields.io/github/last-commit/caixibei/zcode-font-patched)
+![GitHub commit activity](https://img.shields.io/github/commit-activity/m/caixibei/zcode-font-patched)
+![GitHub repo size](https://img.shields.io/github/repo-size/caixibei/zcode-font-patched)
+![GitHub code size](https://img.shields.io/github/languages/code-size/caixibei/zcode-font-patched)
+![GitHub file count](https://img.shields.io/github/directory-file-count/caixibei/zcode-font-patched)
 
 ZCode 桌面客户端 UI 字体美化补丁。
 
