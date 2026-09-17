@@ -24,8 +24,8 @@ ZCode 桌面客户端 UI 字体美化补丁。
 
 通过**等长字节替换**修改 ZCode 安装目录下 `resources/app.asar` 中的 Tailwind 根字体变量（`--font-sans` / `--font-mono`），两个变量使用各自独立的优先级栈（首个已安装的字体族命中）：
 
-- **`--font-sans`（界面正文）**：HarmonyOS Sans SC → PingFang SC（苹方）→ Source Han Sans SC（思源黑体）→ Noto Sans SC
-- **`--font-mono`（代码 / 等宽）**：AnthropicMono Medium（英文）→ HarmonyOS Sans SC → PingFang SC（汉字由它们渲染）→ JetBrains Mono
+- **`--font-sans`（界面正文）**：Fragment Mono（英文）→ SFMono-Regular（macOS 专属，Windows 上为惰性声明）→ HarmonyOS Sans SC → PingFang SC（苹方，汉字）→ Source Han Sans SC（思源黑体）→ Noto Sans SC
+- **`--font-mono`（代码 / 等宽）**：AnthropicMono Medium（英文）→ Fragment Mono → SFMono-Regular → HarmonyOS Sans SC → Noto Sans SC → PingFang SC（汉字由它们渲染）→ JetBrains Mono
 
 无需重装客户端，可随时一键还原。
 
@@ -76,12 +76,14 @@ ZCode 桌面客户端 UI 字体美化补丁。
 
 补丁写入的字体族名（按命中优先级）：
 
-- `--font-sans`：`HarmonyOS Sans SC` → `PingFang SC` → `Source Han Sans SC` → `Noto Sans SC`
-- `--font-mono`：`AnthropicMono Medium` → `HarmonyOS Sans SC` → `PingFang SC` → `JetBrains Mono`
+- `--font-sans`：`Fragment Mono` → `SFMono-Regular` → `HarmonyOS Sans SC` → `PingFang SC` → `Source Han Sans SC` → `Noto Sans SC`
+- `--font-mono`：`AnthropicMono Medium` → `Fragment Mono` → `SFMono-Regular` → `HarmonyOS Sans SC` → `Noto Sans SC` → `PingFang SC` → `JetBrains Mono`
 
 CSS 按**字体族名**精确匹配，系统里需安装同名族名的字体文件才会命中，例如：
 
 - AnthropicMono Medium（族名 `AnthropicMono Medium`，即 AnthropicMono 静态字重的传统族名形式，nameID 1 实测带字重）
+- Fragment Mono（族名 `Fragment Mono`，仅 Regular / Italic 两个字重）
+- `SFMono-Regular` 为 macOS 系统字体，Windows 上未安装也不影响——CSS 对缺失族名自动跳过下一级，声明无害
 - HarmonyOS Sans SC（族名 `HarmonyOS Sans SC`）
 - 苹方（族名 `PingFang SC`）
 - JetBrains Mono（族名 `JetBrains Mono`）
