@@ -24,8 +24,8 @@ ZCode 桌面客户端 UI 字体美化补丁。
 
 通过**等长字节替换**修改 ZCode 安装目录下 `resources/app.asar` 中的 Tailwind 根字体变量（`--font-sans` / `--font-mono`），两个变量使用各自独立的优先级栈（首个已安装的字体族命中）：
 
-- **`--font-sans`（界面正文）**：AnthropicSans（英文）→ LXGW WenKai（霞鹜文楷，汉字）→ PingFang SC（苹方）→ HarmonyOS Sans SC → Source Han Sans SC（思源黑体）→ Noto Sans SC → MiSans
-- **`--font-mono`（代码 / 等宽）**：AnthropicMono（英文）→ Anthropic Mono Variable → PingFang SC（汉字由它渲染）→ JetBrains Mono → LXGW WenKai
+- **`--font-sans`（界面正文）**：HarmonyOS Sans SC → PingFang SC（苹方）→ Source Han Sans SC（思源黑体）→ Noto Sans SC
+- **`--font-mono`（代码 / 等宽）**：AnthropicMono Medium（英文）→ HarmonyOS Sans SC → PingFang SC（汉字由它们渲染）→ JetBrains Mono
 
 无需重装客户端，可随时一键还原。
 
@@ -76,16 +76,13 @@ ZCode 桌面客户端 UI 字体美化补丁。
 
 补丁写入的字体族名（按命中优先级）：
 
-- `--font-sans`：`AnthropicSans` → `LXGW WenKai` → `PingFang SC` → `HarmonyOS Sans SC` → `Source Han Sans SC` → `Noto Sans SC` → `MiSans`
-- `--font-mono`：`AnthropicMono` → `Anthropic Mono Variable` → `PingFang SC` → `JetBrains Mono` → `LXGW WenKai`
-
-> 注：原始 8 级 sans 栈（含 `HarmonyOS Sans` 无 SC 版）超出 127 字符等长窗口 7 字符，物理无法写入；末位 `HarmonyOS Sans` 排在六个中文字体之后实际不可达，故删除，`HarmonyOS Sans SC` 仍在栈内。无空格字体族（`AnthropicSans`、`MiSans`）与无空格逗号分隔均为 CSS 合法写法。
+- `--font-sans`：`HarmonyOS Sans SC` → `PingFang SC` → `Source Han Sans SC` → `Noto Sans SC`
+- `--font-mono`：`AnthropicMono Medium` → `HarmonyOS Sans SC` → `PingFang SC` → `JetBrains Mono`
 
 CSS 按**字体族名**精确匹配，系统里需安装同名族名的字体文件才会命中，例如：
 
-- AnthropicSans 静态族（族名 `AnthropicSans`，14 款，Light ~ Black）
-- AnthropicMono 静态族（族名 `AnthropicMono`）
-- 霞鹜文楷（族名 `LXGW WenKai`，注意不是连写的 `LXGWWenKai`）
+- AnthropicMono Medium（族名 `AnthropicMono Medium`，即 AnthropicMono 静态字重的传统族名形式，nameID 1 实测带字重）
+- HarmonyOS Sans SC（族名 `HarmonyOS Sans SC`）
 - 苹方（族名 `PingFang SC`）
 - JetBrains Mono（族名 `JetBrains Mono`）
 

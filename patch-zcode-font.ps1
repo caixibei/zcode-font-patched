@@ -23,19 +23,20 @@ $hashPath   = Join-Path $PSScriptRoot 'app.asar.font-backup.sha256'
 $oldSans = '--font-sans:ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";'
 $oldMono = '--font-mono:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", monospace;'
 
-# ---- patched strings (v6): separate stacks per variable, user-specified priority ----
-# sans: AnthropicSans -> LXGW WenKai -> PingFang SC -> HarmonyOS Sans SC
-#       -> Source Han Sans SC -> Noto Sans SC -> MiSans
-#       NOTE: the user's original 8-level stack exceeded the 127-char window by
-#       7 chars even with no-space separators and unquoted no-space families, so
-#       the trailing "HarmonyOS Sans" (non-SC) level was dropped: it sits behind
-#       six CJK-capable families and is unreachable in practice, while
-#       "HarmonyOS Sans SC" stays in the stack.
-# mono: AnthropicMono -> Anthropic Mono Variable -> PingFang SC
-#       -> JetBrains Mono -> LXGW WenKai
-#       (no-space separators are CSS-legal and save window space)
-$newSans = '--font-sans:"AnthropicSans","LXGW WenKai","PingFang SC","HarmonyOS Sans SC","Source Han Sans SC","Noto Sans SC","MiSans";'
-$newMono = '--font-mono:"AnthropicMono","Anthropic Mono Variable","PingFang SC","JetBrains Mono","LXGW WenKai";'
+# ---- patched strings (v8): separate stacks per variable, user-specified priority ----
+# sans: HarmonyOS Sans SC -> PingFang SC -> Source Han Sans SC -> Noto Sans SC
+# mono: AnthropicMono Medium (legacy family name with weight, verified nameID 1)
+#       -> HarmonyOS Sans SC (CJK) -> PingFang SC (CJK) -> JetBrains Mono
+$newSans = '--font-sans:"HarmonyOS Sans SC","PingFang SC","Source Han Sans SC","Noto Sans SC";'
+$newMono = '--font-mono:"AnthropicMono Medium","HarmonyOS Sans SC","PingFang SC","JetBrains Mono";'
+
+# ---- v7 patch strings (intermediate revision, mono had no CJK-capable family) ----
+$v7Sans = '--font-sans:"HarmonyOS Sans SC","Source Han Sans SC","Noto Sans SC";'
+$v7Mono = '--font-mono:"AnthropicMono Medium","JetBrains Mono";'
+
+# ---- v6 patch strings (previous kit version) ----
+$v6Sans = '--font-sans:"AnthropicSans","LXGW WenKai","PingFang SC","HarmonyOS Sans SC","Source Han Sans SC","Noto Sans SC","MiSans";'
+$v6Mono = '--font-mono:"AnthropicMono","Anthropic Mono Variable","PingFang SC","JetBrains Mono","LXGW WenKai";'
 
 # ---- v5 patch strings (previous kit version) ----
 $v5Sans = '--font-sans:"LXGW WenKai","PingFang SC","HarmonyOS Sans SC","Source Han Sans SC","Noto Sans SC","HarmonyOS Sans","MiSans";'
@@ -69,6 +70,10 @@ $v4Sans = Pad-To $oldSans $v4Sans
 $v4Mono = Pad-To $oldMono $v4Mono
 $v5Sans = Pad-To $oldSans $v5Sans
 $v5Mono = Pad-To $oldMono $v5Mono
+$v6Sans = Pad-To $oldSans $v6Sans
+$v6Mono = Pad-To $oldMono $v6Mono
+$v7Sans = Pad-To $oldSans $v7Sans
+$v7Mono = Pad-To $oldMono $v7Mono
 
 function Count-Str([string]$hay, [string]$s) {
     return ([regex]::Matches($hay, [regex]::Escape($s))).Count
@@ -151,29 +156,37 @@ $cV4Sans  = Count-Str $text ($v4Sans.TrimEnd(';').TrimEnd())
 $cV4Mono  = Count-Str $text ($v4Mono.TrimEnd(';').TrimEnd())
 $cV5Sans  = Count-Str $text ($v5Sans.TrimEnd(';').TrimEnd())
 $cV5Mono  = Count-Str $text ($v5Mono.TrimEnd(';').TrimEnd())
+$cV6Sans  = Count-Str $text ($v6Sans.TrimEnd(';').TrimEnd())
+$cV6Mono  = Count-Str $text ($v6Mono.TrimEnd(';').TrimEnd())
+$cV7Sans  = Count-Str $text ($v7Sans.TrimEnd(';').TrimEnd())
+$cV7Mono  = Count-Str $text ($v7Mono.TrimEnd(';').TrimEnd())
 $cNewSans = Count-Str $text ($newSans.TrimEnd(';').TrimEnd())
 $cNewMono = Count-Str $text ($newMono.TrimEnd(';').TrimEnd())
 
 $isUnpatched = ($cOldSans -eq 1 -and $cOldMono -eq 1)
 $isV1        = ($cV1Sans -eq 1 -and $cV1Mono -eq 1)
 $isV2        = ($cV2Sans -eq 1 -and $cV2Mono -eq 1)
-$isV3        = ($cV3Sans -ge 1 -and $cV3Mono -ge 1 -and $cNewSans -eq 0 -and $cV4Sans -eq 0 -and $cV5Sans -eq 0)
-$isV4        = ($cV4Sans -ge 1 -and $cV4Mono -ge 1 -and $cNewSans -eq 0 -and $cV5Sans -eq 0)
-$isV5        = ($cV5Sans -ge 1 -and $cV5Mono -ge 1 -and $cNewSans -eq 0)
-$isV6        = ($cNewSans -ge 1 -and $cNewMono -ge 1)
+$isV3        = ($cV3Sans -ge 1 -and $cV3Mono -ge 1 -and $cNewSans -eq 0 -and $cV4Sans -eq 0 -and $cV5Sans -eq 0 -and $cV6Sans -eq 0 -and $cV7Sans -eq 0)
+$isV4        = ($cV4Sans -ge 1 -and $cV4Mono -ge 1 -and $cNewSans -eq 0 -and $cV5Sans -eq 0 -and $cV6Sans -eq 0 -and $cV7Sans -eq 0)
+$isV5        = ($cV5Sans -ge 1 -and $cV5Mono -ge 1 -and $cNewSans -eq 0 -and $cV6Sans -eq 0 -and $cV7Sans -eq 0)
+$isV6        = ($cV6Sans -ge 1 -and $cV6Mono -ge 1 -and $cNewSans -eq 0 -and $cV7Sans -eq 0)
+$isV7        = ($cV7Sans -ge 1 -and $cV7Mono -ge 1 -and $cNewSans -eq 0)
+$isV8        = ($cNewSans -ge 1 -and $cNewMono -ge 1)
 
 # 2) determine the clean baseline asar (what the backup must contain)
 $baseText = $null
 if ($isUnpatched) {
     Write-Host '[1/4] state: unpatched'
     $baseText = $text
-} elseif ($isV1 -or $isV2 -or $isV3 -or $isV4 -or $isV5 -or $isV6) {
+} elseif ($isV1 -or $isV2 -or $isV3 -or $isV4 -or $isV5 -or $isV6 -or $isV7 -or $isV8) {
     if ($isV1) { Write-Host '[1/4] state: v1 patch detected (upgrade)' }
     elseif ($isV2) { Write-Host '[1/4] state: v2 patch detected (upgrade)' }
     elseif ($isV3) { Write-Host '[1/4] state: v3 patch detected (upgrade)' }
     elseif ($isV4) { Write-Host '[1/4] state: v4 patch detected (upgrade)' }
     elseif ($isV5) { Write-Host '[1/4] state: v5 patch detected (upgrade)' }
-    else { Write-Host '[1/4] state: v6 patch detected' }
+    elseif ($isV6) { Write-Host '[1/4] state: v6 patch detected (upgrade)' }
+    elseif ($isV7) { Write-Host '[1/4] state: v7 patch detected (upgrade)' }
+    else { Write-Host '[1/4] state: v8 patch detected' }
     # baseline = existing backup if it verifies as a clean original...
     if (Test-Path $backupPath) {
         $sidecarOk = $false
@@ -193,7 +206,7 @@ if ($isUnpatched) {
     # ...otherwise self-heal: reverse the known patch strings to rebuild the clean original
     if (-not $baseText) {
         $rt = $text
-        foreach ($pair in @(($v1Sans, $oldSans), ($v1Mono, $oldMono), ($v2Sans, $oldSans), ($v2Mono, $oldMono), ($v3Sans, $oldSans), ($v3Mono, $oldMono), ($v4Sans, $oldSans), ($v4Mono, $oldMono), ($v5Sans, $oldSans), ($v5Mono, $oldMono), ($newSans, $oldSans), ($newMono, $oldMono))) {
+        foreach ($pair in @(($v1Sans, $oldSans), ($v1Mono, $oldMono), ($v2Sans, $oldSans), ($v2Mono, $oldMono), ($v3Sans, $oldSans), ($v3Mono, $oldMono), ($v4Sans, $oldSans), ($v4Mono, $oldMono), ($v5Sans, $oldSans), ($v5Mono, $oldMono), ($v6Sans, $oldSans), ($v6Mono, $oldMono), ($v7Sans, $oldSans), ($v7Mono, $oldMono), ($newSans, $oldSans), ($newMono, $oldMono))) {
             $rt = $rt.Replace($pair[0], $pair[1])
         }
         if ((Count-Str $rt $oldSans) -ne 1 -or (Count-Str $rt $oldMono) -ne 1) {
@@ -203,7 +216,7 @@ if ($isUnpatched) {
         Write-Host '[2/4] clean backup missing/invalid, reconstructed from patched asar'
     }
 } else {
-    throw "unknown asar state (oldSans=$cOldSans oldMono=$cOldMono v1=$cV1Sans/$cV1Mono v2=$cV2Sans/$cV2Mono v3=$cV3Sans/$cV3Mono v4=$cV4Sans/$cV4Mono v5=$cV5Sans/$cV5Mono v6=$cNewSans/$cNewMono). Version changed? Refusing."
+    throw "unknown asar state (oldSans=$cOldSans oldMono=$cOldMono v1=$cV1Sans/$cV1Mono v2=$cV2Sans/$cV2Mono v3=$cV3Sans/$cV3Mono v4=$cV4Sans/$cV4Mono v5=$cV5Sans/$cV5Mono v6=$cV6Sans/$cV6Mono v7=$cV7Sans/$cV7Mono v8=$cNewSans/$cNewMono). Version changed? Refusing."
 }
 $baseBytes = $latin1.GetBytes($baseText)
 $baseHash  = Hash-Bytes $baseBytes
@@ -232,7 +245,7 @@ if ((Count-Str $patched $oldSans) -ne 0) { throw 'old sans still present after r
 if ((Count-Str $patched ($newSans.TrimEnd(';').TrimEnd())) -lt 1) { throw 'new sans missing after replace.' }
 
 if ((Hash-Bytes $newBytes) -eq $asarHash) {
-    Write-Host '[3/4] asar already carries the v6 stacks, nothing to write'
+    Write-Host '[3/4] asar already carries the v8 stacks, nothing to write'
 } else {
     [System.IO.File]::WriteAllBytes($asarPath, $newBytes)
     Write-Host '[3/4] patch written (equal-length, size unchanged)'
@@ -244,5 +257,5 @@ if ($zcodeExe) {
 } else {
     Write-Host '[4/4] done. Start ZCode manually.'
 }
-Write-Host '--font-sans: "AnthropicSans" -> "LXGW WenKai" -> "PingFang SC" -> "HarmonyOS Sans SC" -> "Source Han Sans SC" -> "Noto Sans SC" -> "MiSans".'
-Write-Host '--font-mono: "AnthropicMono" -> "Anthropic Mono Variable" -> "PingFang SC" -> "JetBrains Mono" -> "LXGW WenKai".'
+Write-Host '--font-sans: "HarmonyOS Sans SC" -> "PingFang SC" -> "Source Han Sans SC" -> "Noto Sans SC".'
+Write-Host '--font-mono: "AnthropicMono Medium" -> "HarmonyOS Sans SC" -> "PingFang SC" -> "JetBrains Mono".'
