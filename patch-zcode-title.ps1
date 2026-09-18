@@ -1,17 +1,22 @@
-# ZCode session title patch (v1, portable) - restore auto title generation on 3.12.3
+# ZCode session title patch (v2, portable) - restore auto title generation on 3.12.3
 # - Targets resources\glm\zcode.cjs (agent CLI runtime), NOT app.asar
-# - 3.12.3 regression: eligibility check requires truthy config.titleGeneration, but the
-#   desktop host passes {} and an upstream merge can leave it undefined -> FYi/NYi bail
-#   out silently and no session_title model request is ever issued
-# - Patch removes the "||!e.config.titleGeneration" clause from BOTH eligibility functions
-#   (FYi / NYi) using an equal-length /*...*/ filler: byte length stays identical
-# - Equal-length byte replacement: file size unchanged, no repackage needed
+# - Fix 1 (3.12.3 regression): eligibility check requires truthy config.titleGeneration,
+#   but the desktop host passes {} and an upstream merge can leave it undefined ->
+#   FYi/NYi bail out silently and no session_title model request is ever issued.
+#   Patch removes the "||!e.config.titleGeneration" clause from BOTH eligibility
+#   functions (FYi / NYi) using an equal-length /*...*/ filler.
+# - Fix 2 (weak language rule): the title prompt rule "- Use the user's primary
+#   language." is too weak for some models (e.g. minimax-m3 answered an all-Chinese
+#   input with an English title). Strengthened to "- MUST use the user's primary
+#   language." (+5 bytes). zcode.cjs is a standalone file (NOT inside the asar
+#   archive), so a small size change is safe: no offsets or headers depend on it.
 # - Backup = clean original zcode.cjs of THIS machine; an existing verified backup is
 #   never overwritten; missing backup is self-healed by reverse replacement
-# - Idempotent; refuses when the target string does not match (version drift guard)
+# - Upgrades v1 in place; idempotent when already v2
+# - Exits automatically on success; pauses only on errors
 # Revert with restore-zcode-title.bat
 $ErrorActionPreference = 'Stop'
-$latin1 = [System.Text.Encoding]::GetEncoding(28591)  # lossless byte<->char round-trip
+$latin1 = [System.Text.Encoding]::GetEncoding(28591)  # lossless byte<->char round-trip (all patch strings are pure ASCII)
 
 $backupPath = Join-Path $PSScriptRoot 'zcode.cjs.title-backup'
 $hashPath   = Join-Path $PSScriptRoot 'zcode.cjs.title-backup.sha256'
@@ -21,13 +26,19 @@ $hashPath   = Join-Path $PSScriptRoot 'zcode.cjs.title-backup.sha256'
 $oldFy = 'function FYi(e,t,r={}){if(e.sessionTitleGenerationAttempted||e.config.titleGeneration?.enabled===!1||!e.config.titleGeneration||!e.sessionStore||e.config.parentSessionId||e.config.taskType&&e.config.taskType!=="interactive"||e.turnNumber!==0)return!1;'
 # NYi = shouldAttemptGoalSummaryTitleGeneration (goal summary title eligibility)
 $oldNy = 'function NYi(e,t,r){return e.config.titleGeneration?.enabled===!1||!e.config.titleGeneration||!e.sessionStore||e.config.parentSessionId||e.config.taskType&&e.config.taskType!=="interactive"||r.trim().length===0?!1:_J(t).length>0}'
+# title prompt language rule (too weak: some models output English titles for Chinese input)
+$oldLang = "- Use the user's primary language."
 
-# ---- patched forms: drop "||!e.config.titleGeneration" (27 chars), pad with a 27-char /*...*/ comment ----
+# ---- patched forms ----
+# FYi/NYi: drop "||!e.config.titleGeneration" (27 chars), pad with a 27-char /*...*/ comment
 $filler = '/*' + ('x' * 23) + '*/'   # 2+23+2 = 27 chars, JS comment -> no runtime effect
 $newFy = $oldFy.Replace('||!e.config.titleGeneration', '').Replace('{if(', '{' + $filler + 'if(')
 $newNy = $oldNy.Replace('||!e.config.titleGeneration', '').Replace('{return ', '{' + $filler + 'return ')
+# language rule: strengthen with MUST (+5 bytes, safe: standalone file, no offsets)
+$newLang = "- MUST use the user's primary language."
 if ($newFy.Length -ne $oldFy.Length) { throw 'FYi patch length mismatch, aborting.' }
 if ($newNy.Length -ne $oldNy.Length) { throw 'NYi patch length mismatch, aborting.' }
+$langDelta = $newLang.Length - $oldLang.Length   # expected +5
 
 function Count-Str([string]$hay, [string]$s) {
     return ([regex]::Matches($hay, [regex]::Escape($s))).Count
@@ -98,22 +109,42 @@ $bytes    = [System.IO.File]::ReadAllBytes($cjsPath)
 $text     = $latin1.GetString($bytes)
 $cjsHash  = Hash-Bytes $bytes
 
-$cOldFy  = Count-Str $text $oldFy
-$cOldNy  = Count-Str $text $oldNy
-$cNewFy  = Count-Str $text $newFy
-$cNewNy  = Count-Str $text $newNy
+$cOldFy   = Count-Str $text $oldFy
+$cOldNy   = Count-Str $text $oldNy
+$cNewFy   = Count-Str $text $newFy
+$cNewNy   = Count-Str $text $newNy
+$cOldLang = Count-Str $text $oldLang
+$cNewLang = Count-Str $text $newLang
 
-$isUnpatched = ($cOldFy -eq 1 -and $cOldNy -eq 1)
-$isPatched   = ($cNewFy -eq 1 -and $cNewNy -eq 1)
+$isFyNyClean   = ($cOldFy -eq 1 -and $cOldNy -eq 1)
+$isFyNyPatched = ($cNewFy -eq 1 -and $cNewNy -eq 1)
+$isLangClean   = ($cOldLang -eq 1)
+$isLangPatched = ($cNewLang -eq 1)
 
-# 2) determine the clean baseline (what the backup must contain)
+$isUnpatched = ($isFyNyClean   -and $isLangClean)
+$isV2        = ($isFyNyPatched -and $isLangPatched)
+$isV1        = ($isFyNyPatched -and $isLangClean)   # v1: FYi/NYi done, language rule pending
+$isLangOnly  = ($isFyNyClean   -and $isLangPatched)  # unexpected mixed state
+
+# 2) determine the clean baseline (what the backup must contain: all three original fragments)
 $baseText = $null
 if ($isUnpatched) {
     Write-Host '[1/4] state: unpatched (3.12.3 original)'
     $baseText = $text
-} elseif ($isPatched) {
-    Write-Host '[1/4] state: title patch already applied'
-    # baseline = existing backup if it verifies as a clean original...
+} elseif ($isV2) {
+    Write-Host '[1/4] state: title patch v2 already applied'
+    $baseText = Get-CleanBaseline
+} elseif ($isV1) {
+    Write-Host '[1/4] state: v1 title patch detected (upgrading: strengthening language rule)'
+    $baseText = Get-CleanBaseline
+} elseif ($isLangOnly) {
+    throw 'unexpected state: language rule patched but FYi/NYi clean; run restore-zcode-title.bat first.'
+} else {
+    throw "unknown zcode.cjs state (oldFy=$cOldFy oldNy=$cOldNy newFy=$cNewFy newNy=$cNewNy oldLang=$cOldLang newLang=$cNewLang). ZCode version changed? Refusing."
+}
+
+function Get-CleanBaseline {
+    # baseline = existing backup if it verifies as a clean original (all three fragments exactly once)...
     if (Test-Path $backupPath) {
         $sidecarOk = $false
         if (Test-Path $hashPath) {
@@ -123,23 +154,19 @@ if ($isUnpatched) {
         }
         if ($sidecarOk) {
             $bt = $latin1.GetString([System.IO.File]::ReadAllBytes($backupPath))
-            if ((Count-Str $bt $oldFy) -eq 1 -and (Count-Str $bt $oldNy) -eq 1) {
-                $baseText = $bt
+            if ((Count-Str $bt $oldFy) -eq 1 -and (Count-Str $bt $oldNy) -eq 1 -and (Count-Str $bt $oldLang) -eq 1) {
                 Write-Host '[2/4] clean backup verified'
+                return $bt
             }
         }
     }
     # ...otherwise self-heal: reverse the patch to rebuild the clean original
-    if (-not $baseText) {
-        $rt = $text.Replace($newFy, $oldFy).Replace($newNy, $oldNy)
-        if ((Count-Str $rt $oldFy) -ne 1 -or (Count-Str $rt $oldNy) -ne 1) {
-            throw 'clean backup missing/invalid and cannot be reconstructed from the patched file; refusing.'
-        }
-        $baseText = $rt
-        Write-Host '[2/4] clean backup missing/invalid, reconstructed from patched file'
+    $rt = $text.Replace($newFy, $oldFy).Replace($newNy, $oldNy).Replace($newLang, $oldLang)
+    if ((Count-Str $rt $oldFy) -ne 1 -or (Count-Str $rt $oldNy) -ne 1 -or (Count-Str $rt $oldLang) -ne 1) {
+        throw 'clean backup missing/invalid and cannot be reconstructed from the patched file; refusing.'
     }
-} else {
-    throw "unknown zcode.cjs state (oldFy=$cOldFy oldNy=$cOldNy newFy=$cNewFy newNy=$cNewNy). ZCode version changed? Refusing."
+    Write-Host '[2/4] clean backup missing/invalid, reconstructed from patched file'
+    return $rt
 }
 $baseBytes = $latin1.GetBytes($baseText)
 $baseHash  = Hash-Bytes $baseBytes
@@ -161,17 +188,19 @@ if ($needBackupWrite) {
 }
 
 # 4) apply the patch onto the baseline and write only if content changes
-$patched  = $baseText.Replace($oldFy, $newFy).Replace($oldNy, $newNy)
+$patched  = $baseText.Replace($oldFy, $newFy).Replace($oldNy, $newNy).Replace($oldLang, $newLang)
 $newBytes = $latin1.GetBytes($patched)
-if ($newBytes.Length -ne $baseBytes.Length) { throw "length changed: $($baseBytes.Length) -> $($newBytes.Length), refusing to write." }
-if ((Count-Str $patched $oldFy) -ne 0 -or (Count-Str $patched $oldNy) -ne 0) { throw 'old fragment still present after replace.' }
-if ((Count-Str $patched $newFy) -ne 1 -or (Count-Str $patched $newNy) -ne 1) { throw 'new fragment missing after replace.' }
+# FYi/NYi are equal-length swaps; the language rule adds exactly $langDelta bytes
+$expectedLen = $baseBytes.Length + $langDelta
+if ($newBytes.Length -ne $expectedLen) { throw "unexpected length: $($baseBytes.Length) -> $($newBytes.Length) (expected $expectedLen), refusing to write." }
+if ((Count-Str $patched $oldFy) -ne 0 -or (Count-Str $patched $oldNy) -ne 0 -or (Count-Str $patched $oldLang) -ne 0) { throw 'old fragment still present after replace.' }
+if ((Count-Str $patched $newFy) -ne 1 -or (Count-Str $patched $newNy) -ne 1 -or (Count-Str $patched $newLang) -ne 1) { throw 'new fragment missing after replace.' }
 
 if ((Hash-Bytes $newBytes) -eq $cjsHash) {
-    Write-Host '[3/4] zcode.cjs already carries the title patch, nothing to write'
+    Write-Host '[3/4] zcode.cjs already carries the title patch v2, nothing to write'
 } else {
     [System.IO.File]::WriteAllBytes($cjsPath, $newBytes)
-    Write-Host '[3/4] patch written (equal-length, size unchanged)'
+    Write-Host "[3/4] patch written (FYi/NYi equal-length; language rule +$langDelta bytes; standalone file, size change is safe)"
 }
 
 if ($zcodeExe) {
@@ -180,4 +209,4 @@ if ($zcodeExe) {
 } else {
     Write-Host '[4/4] done. Start ZCode manually.'
 }
-Write-Host 'Auto session title generation is restored: new interactive sessions will issue a session_title model request again.'
+Write-Host 'Auto session title generation is restored; titles now MUST follow the user primary language.'
