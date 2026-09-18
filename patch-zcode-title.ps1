@@ -126,23 +126,6 @@ $isV2        = ($isFyNyPatched -and $isLangPatched)
 $isV1        = ($isFyNyPatched -and $isLangClean)   # v1: FYi/NYi done, language rule pending
 $isLangOnly  = ($isFyNyClean   -and $isLangPatched)  # unexpected mixed state
 
-# 2) determine the clean baseline (what the backup must contain: all three original fragments)
-$baseText = $null
-if ($isUnpatched) {
-    Write-Host '[1/4] state: unpatched (3.12.3 original)'
-    $baseText = $text
-} elseif ($isV2) {
-    Write-Host '[1/4] state: title patch v2 already applied'
-    $baseText = Get-CleanBaseline
-} elseif ($isV1) {
-    Write-Host '[1/4] state: v1 title patch detected (upgrading: strengthening language rule)'
-    $baseText = Get-CleanBaseline
-} elseif ($isLangOnly) {
-    throw 'unexpected state: language rule patched but FYi/NYi clean; run restore-zcode-title.bat first.'
-} else {
-    throw "unknown zcode.cjs state (oldFy=$cOldFy oldNy=$cOldNy newFy=$cNewFy newNy=$cNewNy oldLang=$cOldLang newLang=$cNewLang). ZCode version changed? Refusing."
-}
-
 function Get-CleanBaseline {
     # baseline = existing backup if it verifies as a clean original (all three fragments exactly once)...
     if (Test-Path $backupPath) {
@@ -167,6 +150,23 @@ function Get-CleanBaseline {
     }
     Write-Host '[2/4] clean backup missing/invalid, reconstructed from patched file'
     return $rt
+}
+
+# 2) determine the clean baseline (what the backup must contain: all three original fragments)
+$baseText = $null
+if ($isUnpatched) {
+    Write-Host '[1/4] state: unpatched (3.12.3 original)'
+    $baseText = $text
+} elseif ($isV2) {
+    Write-Host '[1/4] state: title patch v2 already applied'
+    $baseText = Get-CleanBaseline
+} elseif ($isV1) {
+    Write-Host '[1/4] state: v1 title patch detected (upgrading: strengthening language rule)'
+    $baseText = Get-CleanBaseline
+} elseif ($isLangOnly) {
+    throw 'unexpected state: language rule patched but FYi/NYi clean; run restore-zcode-title.bat first.'
+} else {
+    throw "unknown zcode.cjs state (oldFy=$cOldFy oldNy=$cOldNy newFy=$cNewFy newNy=$cNewNy oldLang=$cOldLang newLang=$cNewLang). ZCode version changed? Refusing."
 }
 $baseBytes = $latin1.GetBytes($baseText)
 $baseHash  = Hash-Bytes $baseBytes
