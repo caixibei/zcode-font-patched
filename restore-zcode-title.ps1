@@ -1,10 +1,24 @@
-# Revert ZCode session title patch (v2, portable): restore clean zcode.cjs from backup and restart
+# Revert ZCode session title patch (v3, portable): restore clean zcode.cjs from backup and restart
 # Auto-locates ZCode install; every probe is fault-tolerant.
-# Exits automatically on success; pauses only on errors.
+# Signature table mirrors patch-zcode-title.ps1 (3.14.1 / 3.12.3).
 $ErrorActionPreference = 'Stop'
 
 $backupPath = Join-Path $PSScriptRoot 'zcode.cjs.title-backup'
 $hashPath   = Join-Path $PSScriptRoot 'zcode.cjs.title-backup.sha256'
+
+$versions = @(
+    @{
+        tag    = '3.14.1'
+        eligA  = 'function Pba(e,t,n={}){if(e.sessionTitleGenerationAttempted||e.config.titleGeneration?.enabled===!1||!e.config.titleGeneration||!e.sessionStore||e.config.parentSessionId||e.config.taskType&&e.config.taskType!=="interactive"||e.turnNumber!==0)return!1;'
+        eligB  = 'function Tba(e,t,n){return e.config.titleGeneration?.enabled===!1||!e.config.titleGeneration||!e.sessionStore||e.config.parentSessionId||e.config.taskType&&e.config.taskType!=="interactive"||n.trim().length===0?!1:Zye(t).length>0}'
+    },
+    @{
+        tag    = '3.12.3'
+        eligA  = 'function FYi(e,t,r={}){if(e.sessionTitleGenerationAttempted||e.config.titleGeneration?.enabled===!1||!e.config.titleGeneration||!e.sessionStore||e.config.parentSessionId||e.config.taskType&&e.config.taskType!=="interactive"||e.turnNumber!==0)return!1;'
+        eligB  = 'function NYi(e,t,r){return e.config.titleGeneration?.enabled===!1||!e.config.titleGeneration||!e.sessionStore||e.config.parentSessionId||e.config.taskType&&e.config.taskType!=="interactive"||r.trim().length===0?!1:_J(t).length>0}'
+    }
+)
+$oldLang = "- Use the user's primary language."
 
 function Find-ZCodeDir {
     try {
@@ -74,14 +88,22 @@ if (Test-Path $hashPath) {
     }
 }
 
-# the backup must be a clean unpatched zcode.cjs, never a patched one
+# the backup must match a clean original of a KNOWN version (all fragments exactly once)
 $latin1 = [System.Text.Encoding]::GetEncoding(28591)
-$oldFy = 'function FYi(e,t,r={}){if(e.sessionTitleGenerationAttempted||e.config.titleGeneration?.enabled===!1||!e.config.titleGeneration||!e.sessionStore||e.config.parentSessionId||e.config.taskType&&e.config.taskType!=="interactive"||e.turnNumber!==0)return!1;'
-$oldNy = 'function NYi(e,t,r){return e.config.titleGeneration?.enabled===!1||!e.config.titleGeneration||!e.sessionStore||e.config.parentSessionId||e.config.taskType&&e.config.taskType!=="interactive"||r.trim().length===0?!1:_J(t).length>0}'
-$oldLang = "- Use the user's primary language."
 $bt = $latin1.GetString([System.IO.File]::ReadAllBytes($backupPath))
-if (([regex]::Matches($bt, [regex]::Escape($oldFy))).Count -ne 1 -or ([regex]::Matches($bt, [regex]::Escape($oldNy))).Count -ne 1 -or ([regex]::Matches($bt, [regex]::Escape($oldLang))).Count -ne 1) {
-    Write-Host '[X] backup is not a clean original zcode.cjs (looks patched or from a different ZCode version), refusing to overwrite.' -ForegroundColor Red
+$matched = $false
+foreach ($v in $versions) {
+    $ca = ([regex]::Matches($bt, [regex]::Escape($v.eligA))).Count
+    $cb = ([regex]::Matches($bt, [regex]::Escape($v.eligB))).Count
+    $cl = ([regex]::Matches($bt, [regex]::Escape($oldLang))).Count
+    if ($ca -eq 1 -and $cb -eq 1 -and $cl -eq 1) {
+        Write-Host "[OK] backup matches clean original of ZCode $($v.tag)."
+        $matched = $true
+        break
+    }
+}
+if (-not $matched) {
+    Write-Host '[X] backup does not match any known clean original zcode.cjs (looks patched or from an unsupported ZCode version), refusing to overwrite.' -ForegroundColor Red
     Read-Host 'Press Enter to exit'
     exit 1
 }

@@ -1,18 +1,23 @@
-# ZCode session title patch (v2, portable) - restore auto title generation on 3.12.3
+# ZCode session title patch (v3, portable) - restore auto title generation
 # - Targets resources\glm\zcode.cjs (agent CLI runtime), NOT app.asar
-# - Fix 1 (3.12.3 regression): eligibility check requires truthy config.titleGeneration,
-#   but the desktop host passes {} and an upstream merge can leave it undefined ->
-#   FYi/NYi bail out silently and no session_title model request is ever issued.
+# - Regression (3.12.3 through 3.14.1, still present): eligibility check requires
+#   truthy config.titleGeneration, but the desktop host passes {} and an upstream
+#   merge can leave it undefined -> eligibility functions bail out silently and no
+#   session_title model request is ever issued.
 #   Patch removes the "||!e.config.titleGeneration" clause from BOTH eligibility
-#   functions (FYi / NYi) using an equal-length /*...*/ filler.
-# - Fix 2 (weak language rule): the title prompt rule "- Use the user's primary
+#   functions using an equal-length /*...*/ filler.
+#   Function names are minified per version, so this kit carries a per-version
+#   signature table:
+#     3.12.3: FYi / NYi / _J
+#     3.14.1: Pba / Tba / Zye
+# - Weak language rule fix: the title prompt rule "- Use the user's primary
 #   language." is too weak for some models (e.g. minimax-m3 answered an all-Chinese
 #   input with an English title). Strengthened to "- MUST use the user's primary
 #   language." (+5 bytes). zcode.cjs is a standalone file (NOT inside the asar
 #   archive), so a small size change is safe: no offsets or headers depend on it.
 # - Backup = clean original zcode.cjs of THIS machine; an existing verified backup is
 #   never overwritten; missing backup is self-healed by reverse replacement
-# - Upgrades v1 in place; idempotent when already v2
+# - Upgrades v1/v2 in place; idempotent when already patched
 # - Exits automatically on success; pauses only on errors
 # Revert with restore-zcode-title.bat
 $ErrorActionPreference = 'Stop'
@@ -21,24 +26,25 @@ $latin1 = [System.Text.Encoding]::GetEncoding(28591)  # lossless byte<->char rou
 $backupPath = Join-Path $PSScriptRoot 'zcode.cjs.title-backup'
 $hashPath   = Join-Path $PSScriptRoot 'zcode.cjs.title-backup.sha256'
 
-# ---- exact original fragments inside zcode.cjs 3.12.3 (each must occur exactly once) ----
-# FYi = shouldAttemptSessionTitleGeneration (session title eligibility)
-$oldFy = 'function FYi(e,t,r={}){if(e.sessionTitleGenerationAttempted||e.config.titleGeneration?.enabled===!1||!e.config.titleGeneration||!e.sessionStore||e.config.parentSessionId||e.config.taskType&&e.config.taskType!=="interactive"||e.turnNumber!==0)return!1;'
-# NYi = shouldAttemptGoalSummaryTitleGeneration (goal summary title eligibility)
-$oldNy = 'function NYi(e,t,r){return e.config.titleGeneration?.enabled===!1||!e.config.titleGeneration||!e.sessionStore||e.config.parentSessionId||e.config.taskType&&e.config.taskType!=="interactive"||r.trim().length===0?!1:_J(t).length>0}'
-# title prompt language rule (too weak: some models output English titles for Chinese input)
+# ---- per-version signature table ----
+# Each entry: original eligibility fragments (must occur exactly once each) + shared
+# language-rule fragment. The filler logic is identical across versions (drop the
+# 27-char "||!e.config.titleGeneration" clause, pad with a 27-char /*...*/ comment).
+$versions = @(
+    @{
+        tag    = '3.14.1'
+        eligA  = 'function Pba(e,t,n={}){if(e.sessionTitleGenerationAttempted||e.config.titleGeneration?.enabled===!1||!e.config.titleGeneration||!e.sessionStore||e.config.parentSessionId||e.config.taskType&&e.config.taskType!=="interactive"||e.turnNumber!==0)return!1;'
+        eligB  = 'function Tba(e,t,n){return e.config.titleGeneration?.enabled===!1||!e.config.titleGeneration||!e.sessionStore||e.config.parentSessionId||e.config.taskType&&e.config.taskType!=="interactive"||n.trim().length===0?!1:Zye(t).length>0}'
+    },
+    @{
+        tag    = '3.12.3'
+        eligA  = 'function FYi(e,t,r={}){if(e.sessionTitleGenerationAttempted||e.config.titleGeneration?.enabled===!1||!e.config.titleGeneration||!e.sessionStore||e.config.parentSessionId||e.config.taskType&&e.config.taskType!=="interactive"||e.turnNumber!==0)return!1;'
+        eligB  = 'function NYi(e,t,r){return e.config.titleGeneration?.enabled===!1||!e.config.titleGeneration||!e.sessionStore||e.config.parentSessionId||e.config.taskType&&e.config.taskType!=="interactive"||r.trim().length===0?!1:_J(t).length>0}'
+    }
+)
 $oldLang = "- Use the user's primary language."
-
-# ---- patched forms ----
-# FYi/NYi: drop "||!e.config.titleGeneration" (27 chars), pad with a 27-char /*...*/ comment
-$filler = '/*' + ('x' * 23) + '*/'   # 2+23+2 = 27 chars, JS comment -> no runtime effect
-$newFy = $oldFy.Replace('||!e.config.titleGeneration', '').Replace('{if(', '{' + $filler + 'if(')
-$newNy = $oldNy.Replace('||!e.config.titleGeneration', '').Replace('{return ', '{' + $filler + 'return ')
-# language rule: strengthen with MUST (+5 bytes, safe: standalone file, no offsets)
 $newLang = "- MUST use the user's primary language."
-if ($newFy.Length -ne $oldFy.Length) { throw 'FYi patch length mismatch, aborting.' }
-if ($newNy.Length -ne $oldNy.Length) { throw 'NYi patch length mismatch, aborting.' }
-$langDelta = $newLang.Length - $oldLang.Length   # expected +5
+$langDelta = $newLang.Length - $oldLang.Length   # +5
 
 function Count-Str([string]$hay, [string]$s) {
     return ([regex]::Matches($hay, [regex]::Escape($s))).Count
@@ -46,6 +52,15 @@ function Count-Str([string]$hay, [string]$s) {
 function Hash-Bytes([byte[]]$b) {
     $sha = [System.Security.Cryptography.SHA256]::Create()
     try { return (($sha.ComputeHash($b) | ForEach-Object { $_.ToString('X2') }) -join '') } finally { $sha.Dispose() }
+}
+# Build patched (new) forms for a signature entry
+function New-PatchedPair([string]$a, [string]$b) {
+    $filler = '/*' + ('x' * 23) + '*/'   # 27 chars, JS comment -> no runtime effect
+    $na = $a.Replace('||!e.config.titleGeneration', '').Replace('{if(', '{' + $filler + 'if(')
+    $nb = $b.Replace('||!e.config.titleGeneration', '').Replace('{return ', '{' + $filler + 'return ')
+    if ($na.Length -ne $a.Length) { throw "eligA patch length mismatch for current signature, aborting." }
+    if ($nb.Length -ne $b.Length) { throw "eligB patch length mismatch for current signature, aborting." }
+    return @($na, $nb)
 }
 
 function Find-ZCodeDir {
@@ -104,30 +119,32 @@ if ($procs) {
     exit 1
 }
 
-# 1) read current file and detect its state BEFORE touching any backup
-$bytes    = [System.IO.File]::ReadAllBytes($cjsPath)
-$text     = $latin1.GetString($bytes)
-$cjsHash  = Hash-Bytes $bytes
+# 1) read current file and match it against the signature table
+$bytes   = [System.IO.File]::ReadAllBytes($cjsPath)
+$text    = $latin1.GetString($bytes)
+$cjsHash = Hash-Bytes $bytes
 
-$cOldFy   = Count-Str $text $oldFy
-$cOldNy   = Count-Str $text $oldNy
-$cNewFy   = Count-Str $text $newFy
-$cNewNy   = Count-Str $text $newNy
 $cOldLang = Count-Str $text $oldLang
 $cNewLang = Count-Str $text $newLang
-
-$isFyNyClean   = ($cOldFy -eq 1 -and $cOldNy -eq 1)
-$isFyNyPatched = ($cNewFy -eq 1 -and $cNewNy -eq 1)
 $isLangClean   = ($cOldLang -eq 1)
 $isLangPatched = ($cNewLang -eq 1)
 
-$isUnpatched = ($isFyNyClean   -and $isLangClean)
-$isV2        = ($isFyNyPatched -and $isLangPatched)
-$isV1        = ($isFyNyPatched -and $isLangClean)   # v1: FYi/NYi done, language rule pending
-$isLangOnly  = ($isFyNyClean   -and $isLangPatched)  # unexpected mixed state
+$sig = $null; $sigTag = ''; $state = 'unknown'
+$counts = @()
+foreach ($v in $versions) {
+    $na, $nb = New-PatchedPair $v.eligA $v.eligB
+    $ca = Count-Str $text $v.eligA; $cb = Count-Str $text $v.eligB
+    $naCnt = Count-Str $text $na;   $nbCnt = Count-Str $text $nb
+    $counts += "[$($v.tag)] A=$ca/$naCnt B=$cb/$nbCnt"
+    $cleanPair   = ($ca -eq 1 -and $cb -eq 1)
+    $patchedPair = ($naCnt -eq 1 -and $nbCnt -eq 1)
+    if ($cleanPair -and $isLangClean)   { $sig = $v; $sigTag = $v.tag; $state = 'unpatched'; break }
+    if ($patchedPair -and $isLangPatched) { $sig = $v; $sigTag = $v.tag; $state = 'v2v3'; break }
+    if ($patchedPair -and $isLangClean)   { $sig = $v; $sigTag = $v.tag; $state = 'v1'; break }
+}
 
-function Get-CleanBaseline {
-    # baseline = existing backup if it verifies as a clean original (all three fragments exactly once)...
+function Get-CleanBaseline($sig) {
+    # baseline = existing backup if it verifies as a clean original for THIS signature...
     if (Test-Path $backupPath) {
         $sidecarOk = $false
         if (Test-Path $hashPath) {
@@ -137,37 +154,36 @@ function Get-CleanBaseline {
         }
         if ($sidecarOk) {
             $bt = $latin1.GetString([System.IO.File]::ReadAllBytes($backupPath))
-            if ((Count-Str $bt $oldFy) -eq 1 -and (Count-Str $bt $oldNy) -eq 1 -and (Count-Str $bt $oldLang) -eq 1) {
+            if ((Count-Str $bt $sig.eligA) -eq 1 -and (Count-Str $bt $sig.eligB) -eq 1 -and (Count-Str $bt $oldLang) -eq 1) {
                 Write-Host '[2/4] clean backup verified'
                 return $bt
             }
         }
     }
     # ...otherwise self-heal: reverse the patch to rebuild the clean original
-    $rt = $text.Replace($newFy, $oldFy).Replace($newNy, $oldNy).Replace($newLang, $oldLang)
-    if ((Count-Str $rt $oldFy) -ne 1 -or (Count-Str $rt $oldNy) -ne 1 -or (Count-Str $rt $oldLang) -ne 1) {
+    $na, $nb = New-PatchedPair $sig.eligA $sig.eligB
+    $rt = $text.Replace($na, $sig.eligA).Replace($nb, $sig.eligB).Replace($newLang, $oldLang)
+    if ((Count-Str $rt $sig.eligA) -ne 1 -or (Count-Str $rt $sig.eligB) -ne 1 -or (Count-Str $rt $oldLang) -ne 1) {
         throw 'clean backup missing/invalid and cannot be reconstructed from the patched file; refusing.'
     }
     Write-Host '[2/4] clean backup missing/invalid, reconstructed from patched file'
     return $rt
 }
 
-# 2) determine the clean baseline (what the backup must contain: all three original fragments)
 $baseText = $null
-if ($isUnpatched) {
-    Write-Host '[1/4] state: unpatched (3.12.3 original)'
+if ($state -eq 'unpatched') {
+    Write-Host "[1/4] state: unpatched (ZCode $sigTag original)"
     $baseText = $text
-} elseif ($isV2) {
-    Write-Host '[1/4] state: title patch v2 already applied'
-    $baseText = Get-CleanBaseline
-} elseif ($isV1) {
-    Write-Host '[1/4] state: v1 title patch detected (upgrading: strengthening language rule)'
-    $baseText = Get-CleanBaseline
-} elseif ($isLangOnly) {
-    throw 'unexpected state: language rule patched but FYi/NYi clean; run restore-zcode-title.bat first.'
+} elseif ($state -eq 'v2v3') {
+    Write-Host "[1/4] state: title patch already applied (ZCode $sigTag)"
+    $baseText = Get-CleanBaseline $sig
+} elseif ($state -eq 'v1') {
+    Write-Host "[1/4] state: v1 patch detected (ZCode $sigTag) - upgrading: strengthening language rule"
+    $baseText = Get-CleanBaseline $sig
 } else {
-    throw "unknown zcode.cjs state (oldFy=$cOldFy oldNy=$cOldNy newFy=$cNewFy newNy=$cNewNy oldLang=$cOldLang newLang=$cNewLang). ZCode version changed? Refusing."
+    throw "unknown zcode.cjs state (lang=$cOldLang/$cNewLang; $($counts -join ' ')). ZCode version changed? Update the signature table in this script. Refusing."
 }
+
 $baseBytes = $latin1.GetBytes($baseText)
 $baseHash  = Hash-Bytes $baseBytes
 
@@ -188,19 +204,20 @@ if ($needBackupWrite) {
 }
 
 # 4) apply the patch onto the baseline and write only if content changes
-$patched  = $baseText.Replace($oldFy, $newFy).Replace($oldNy, $newNy).Replace($oldLang, $newLang)
+$na, $nb = New-PatchedPair $sig.eligA $sig.eligB
+$patched  = $baseText.Replace($sig.eligA, $na).Replace($sig.eligB, $nb).Replace($oldLang, $newLang)
 $newBytes = $latin1.GetBytes($patched)
-# FYi/NYi are equal-length swaps; the language rule adds exactly $langDelta bytes
+# eligibility swaps are equal-length; the language rule adds exactly $langDelta bytes
 $expectedLen = $baseBytes.Length + $langDelta
 if ($newBytes.Length -ne $expectedLen) { throw "unexpected length: $($baseBytes.Length) -> $($newBytes.Length) (expected $expectedLen), refusing to write." }
-if ((Count-Str $patched $oldFy) -ne 0 -or (Count-Str $patched $oldNy) -ne 0 -or (Count-Str $patched $oldLang) -ne 0) { throw 'old fragment still present after replace.' }
-if ((Count-Str $patched $newFy) -ne 1 -or (Count-Str $patched $newNy) -ne 1 -or (Count-Str $patched $newLang) -ne 1) { throw 'new fragment missing after replace.' }
+if ((Count-Str $patched $sig.eligA) -ne 0 -or (Count-Str $patched $sig.eligB) -ne 0 -or (Count-Str $patched $oldLang) -ne 0) { throw 'old fragment still present after replace.' }
+if ((Count-Str $patched $na) -ne 1 -or (Count-Str $patched $nb) -ne 1 -or (Count-Str $patched $newLang) -ne 1) { throw 'new fragment missing after replace.' }
 
 if ((Hash-Bytes $newBytes) -eq $cjsHash) {
-    Write-Host '[3/4] zcode.cjs already carries the title patch v2, nothing to write'
+    Write-Host '[3/4] zcode.cjs already carries the title patch, nothing to write'
 } else {
     [System.IO.File]::WriteAllBytes($cjsPath, $newBytes)
-    Write-Host "[3/4] patch written (FYi/NYi equal-length; language rule +$langDelta bytes; standalone file, size change is safe)"
+    Write-Host "[3/4] patch written (ZCode $sigTag; eligibility equal-length; language rule +$langDelta bytes)"
 }
 
 if ($zcodeExe) {

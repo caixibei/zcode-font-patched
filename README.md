@@ -59,9 +59,9 @@ ZCode 桌面客户端补丁工具包，包含两个独立补丁：
 1. 完全退出 ZCode
 2. 双击 `restore-zcode-font.bat`，从备份恢复原始 `app.asar` 并重启 ZCode
 
-### 标题自动生成修复补丁（3.12.3 专用）
+### 标题自动生成修复补丁（3.12.3 / 3.14.x）
 
-**适用症状**：ZCode 升级到 3.12.3 后，侧边栏新会话不再自动提炼中文短标题，标题停留在首条消息的原始截断文本（如 `NODE_ENV=development VUE_APP_BUILD_TYPE=…`），只能手动重命名。
+**适用症状**：ZCode 3.12.3 起，侧边栏新会话不再自动提炼中文短标题，标题停留在首条消息的原始截断文本（如 `NODE_ENV=development VUE_APP_BUILD_TYPE=…`），只能手动重命名。
 
 **打补丁**
 
@@ -87,33 +87,41 @@ ZCode 桌面客户端补丁工具包，包含两个独立补丁：
 
 ---
 
-## 二、会话标题自动生成修复补丁（3.12.3）
+## 二、会话标题自动生成修复补丁
 
 ### 背景
 
 ZCode 3.12.3（2026-09-17 发布）起，新建交互会话不再触发标题自动提炼。排查确认：
 
 - 旧版（3.12.2 及更早）中，首轮对话完成后 agent 运行时会发起一次 `querySource=session_title` 的独立模型请求，把用户首条消息提炼成 3–7 词的短标题写回会话；
-- 3.12.3 运行时（`resources\glm\zcode.cjs`）中该请求彻底消失，且日志无任何 `session_title_generation.*` 事件（连 skipped 都没有）；
-- 功能代码（标题提示词、模型调用、写回逻辑）在 3.12.3 中全部保留，未被移除。
+- 3.12.3 起运行时（`resources\glm\zcode.cjs`）中该请求彻底消失，且日志无任何 `session_title_generation.*` 事件（连 skipped 都没有）；
+- 功能代码（标题提示词、模型调用、写回逻辑）全部保留，未被移除。
 
 ### 根因
 
-`zcode.cjs` 中两个标题生成资格判断函数（反混淆名 `FYi` / `NYi`，内部名 `shouldAttemptSessionTitleGeneration` / `shouldAttemptGoalSummaryTitleGeneration`）的短路条件为：
+`zcode.cjs` 中两个标题生成资格判断函数（内部名 `shouldAttemptSessionTitleGeneration` / `shouldAttemptGoalSummaryTitleGeneration`；混淆名随版本变化：3.12.3 为 `FYi`/`NYi`，3.14.1 为 `Pba`/`Tba`）的短路条件为：
 
 ```js
 ... || e.config.titleGeneration?.enabled===!1 || !e.config.titleGeneration || ...
 ```
 
-其中 `!e.config.titleGeneration` 要求配置对象必须存在（真值）。桌面端 host 创建会话时传入的是空对象 `{}`，经上游运行时配置合并后可能变为 `undefined`，于是该条件恒为真，函数在发出任何日志前就返回 `false`——标题生成被静默跳过。这是 3.12.3 的回归 bug（官方更新日志未声明此变更）。
+其中 `!e.config.titleGeneration` 要求配置对象必须存在（真值）。桌面端 host 创建会话时传入的是空对象 `{}`，经上游运行时配置合并后可能变为 `undefined`，于是该条件恒为真，函数在发出任何日志前就返回 `false`——标题生成被静默跳过。**经逐字节比对确认 3.12.3 至 3.14.1 均保留同一回归 bug**（官方更新日志未声明此变更）。
 
-### 补丁原理（v2，共两处修改）
+### 补丁原理（v3，共两处修改）
 
 **修改 1：恢复标题生成触发**。将两个函数中的 `||!e.config.titleGeneration` 条件删除（其余门槛全部保留：显式关闭、子会话、非交互任务、已尝试过、首条输入过短等仍正常拦截），删除出的 27 字节用等长的 `/*...*/` 空注释填充。补丁后的函数体经 Node 实测——配置 `undefined` / `{}` 时放行生成，`{enabled:!1}`（显式关闭）、短输入、非交互任务仍正确拦截；自动化/定时任务仍传 `titleGenerationEnabled:!1`，显式关闭语义不受影响。
 
-**修改 2：强化标题语言规则**（v2 新增）。3.12.3 标题提示词中的语言规则原文是弱约束 `- Use the user's primary language.`，实测部分模型（如 minimax-m3）不遵守，对全中文输入会输出英文标题。v2 将其强化为 `- MUST use the user's primary language.`（+5 字节）。`zcode.cjs` 是独立文件（不在 asar 归档内，无偏移量/长度头依赖），文件小幅变长安全。
+**修改 2：强化标题语言规则**。标题提示词中的语言规则原文是弱约束 `- Use the user's primary language.`，实测部分模型（如 minimax-m3）不遵守，对全中文输入会输出英文标题。补丁将其强化为 `- MUST use the user's primary language.`（+5 字节）。`zcode.cjs` 是独立文件（不在 asar 归档内，无偏移量/长度头依赖），文件小幅变长安全。
 
-> v1 用户说明：v1 只含修改 1。直接重新运行 `patch-zcode-title.bat` 即可原地升级到 v2，脚本自动识别 v1 状态（含无备份时从补丁态反向重建干净基线），无需先还原。
+**多版本适配（v3 新增）**：函数名随版本被混淆器改名，v3 起脚本内置**按版本的特征签名表**，自动识别本机 `zcode.cjs` 对应哪个 ZCode 版本并选用对应原文片段：
+
+| ZCode 版本 | 资格函数混淆名 | 支持状态 |
+| --- | --- | --- |
+| 3.14.x | `Pba` / `Tba` | ✅ 已适配 |
+| 3.12.3 | `FYi` / `NYi` | ✅ 已适配 |
+| 其他版本 | 未知 | ❌ 拒绝执行（安全保护） |
+
+> 旧版补丁用户说明：直接重新运行 `patch-zcode-title.bat` 即可原地升级，脚本自动识别 v1/v2 状态（含无备份时从补丁态反向重建干净基线），无需先还原。ZCode 升级覆盖 `zcode.cjs` 后重跑脚本即可（见「升级注意」）。
 
 ### 安全机制
 
@@ -122,7 +130,7 @@ ZCode 3.12.3（2026-09-17 发布）起，新建交互会话不再触发标题自
 - 打补丁前把当前 `zcode.cjs` 备份到工具包目录（`zcode.cjs.title-backup`）并写入 SHA-256 指纹（`zcode.cjs.title-backup.sha256`）；
 - 备份始终指向"本机打补丁前的原始状态"，已有有效备份不会被覆盖；
 - 幂等：重复运行自动识别状态并跳过；
-- 版本保护：`zcode.cjs` 中找不到已知原始字符串（说明 ZCode 版本已变化）时拒绝修改；
+- 版本保护：`zcode.cjs` 中找不到任何已知版本的特征字符串（说明 ZCode 版本已变化）时拒绝修改；
 - 运行检查：ZCode 未退出时拒绝执行。
 
 ### 生效验证
@@ -131,11 +139,15 @@ ZCode 3.12.3（2026-09-17 发布）起，新建交互会话不再触发标题自
 
 - 侧边栏标题自动变为提炼后的短标题（会话列表 `title_source` 变为 `generated`）；
 - 日志 `~/.zcode/cli/log/zcode-*.jsonl` 中出现 `"querySource":"session_title"` 的 `model.request.completed` 事件；
-- **中文输入应产出中文标题**。若仍出现英文标题：先确认已升级到 v2（检查 `zcode.cjs` 中语言规则是否为 `- MUST use the user's primary language.`），再检查该会话所用模型——个别模型对 MUST 指令遵从度仍低，属模型能力问题而非补丁失效。
+- **中文输入应产出中文标题**。若仍出现英文标题：先确认补丁已应用（检查 `zcode.cjs` 中语言规则是否为 `- MUST use the user's primary language.`），再检查该会话所用模型——个别模型对 MUST 指令遵从度仍低，属模型能力问题而非补丁失效。
 
 ### 升级注意
 
-ZCode 后续版本升级会覆盖 `resources\glm\zcode.cjs`，标题补丁随之失效（字体补丁同理）。若官方已修复此 bug 则无需重打；若未修复，更新本工具包中 `$oldFy` / `$oldNy` 字符串以匹配新版代码后重新运行。
+ZCode 版本升级会覆盖 `resources\glm\zcode.cjs`，标题补丁随之失效并出现 `unknown zcode.cjs state` 报错（这是版本保护在起作用，不是故障）。处理方式：
+
+1. 退出 ZCode 后重新运行 `patch-zcode-title.bat`；若脚本签名表已收录新版，会自动识别并重打；
+2. 若签名表未收录（报错里会打印各版本特征的命中计数），需人工定位新版 `zcode.cjs` 中的新混淆函数名（搜索 `shouldAttemptSessionTitleGeneration` 调试标注附近的 `function` 定义），把新原文追加进两个脚本的 `$versions` 表；
+3. 若官方已修复此 bug 则无需重打，直接删除旧备份即可。
 
 ## 字体说明
 
