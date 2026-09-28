@@ -11,8 +11,8 @@
 #   order; only the target CSS gains an appended block and the header gains
 #   recomputed offsets; per-file "integrity" fields are dropped (not validated
 #   without the fuse).
-# - Photo sources: 6 built-in images in .\wallpapers\, or any image via
-#   manual path input (CJK paths supported).
+# - Photo sources: built-in images in .\wallpapers\ (auto-listed by menu), or
+#   any image via manual path input (CJK paths supported).
 # - Veil: theme-colored translucent layer over the photo. 0 = pure photo,
 #   higher = more solid veil / fainter photo (default 60).
 # - Re-run to switch photo or opacity at any time.
