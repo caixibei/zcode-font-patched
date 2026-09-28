@@ -392,6 +392,9 @@ $blockBytes = ConvertTo-WallpaperCss $photoPath $veilPct
 
 # assemble the css payload from the CURRENT css: strip the old block if present
 # (state 'patched'), then append the new block after a single newline
+# assemble the css payload from the CURRENT css (stripped of any old block):
+# $cleanCssText was computed in step 1 exactly for this purpose
+$cleanBytes = [System.Text.Encoding]::UTF8.GetBytes($cleanCssText)
 $patchedCssBytes = New-Object byte[] ($cleanBytes.Length + 1 + $blockBytes.Length)
 [Array]::Copy($cleanBytes, 0, $patchedCssBytes, 0, $cleanBytes.Length)
 $patchedCssBytes[$cleanBytes.Length] = 0x0A
