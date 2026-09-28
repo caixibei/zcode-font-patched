@@ -20,12 +20,38 @@
 ![GitHub code size](https://img.shields.io/github/languages/code-size/caixibei/zcode-font-patched)
 ![GitHub file count](https://img.shields.io/github/directory-file-count/caixibei/zcode-font-patched)
 
-ZCode 桌面客户端补丁工具包，包含四个独立补丁：
+ZCode 桌面客户端补丁工具包，包含四个独立补丁与一个统一工具箱入口：
 
 1. **UI 字体美化补丁**（`patch-zcode-font`）——替换界面字体栈
 2. **会话标题自动生成修复补丁**（`patch-zcode-title`）——恢复 3.12.3 中失效的侧边栏会话标题自动提炼
 3. **桌面壁纸补丁**（`patch-zcode-wallpaper`）——把窗口根背景换成自选照片（半透明主题色纱罩保证可读性）
 4. **更新检查禁用补丁**（`patch-zcode-updates`）——彻底关闭自动更新检测，侧边栏不再出现绿色「更新」徽标；想升级时自行下载安装包
+
+**统一工具箱**（`zcode-toolbox.bat`）：把 4 个补丁 + 4 个还原做成一张任务清单，支持一次输入多个任务编号（如 `1 3` 或 `1,3,4`）按序执行；ZCode 退出检查只做一次，全部完成后统一重启一次。四个补丁全部基于**当前 asar 原位操作**，打/还原/换图互不影响（详见「互不影响保证」）。
+
+---
+
+## 〇、工具箱统一入口
+
+1. 完全退出 ZCode（托盘图标右键 → Quit）
+2. 双击 `zcode-toolbox.bat`
+3. 在菜单里输入任务编号（可多选，空格或逗号分隔）：
+   - `[1]` 字体补丁 `[2]` 标题修复 `[3]` 壁纸补丁 `[4]` 禁用更新检查
+   - `[5]` 还原字体 `[6]` 还原标题 `[7]` 还原壁纸 `[8]` 恢复更新检查
+4. 确认后按序执行；某任务失败立即停止后续任务（已完成的任务保持其状态），修好后再跑一次即可
+5. 全部成功后自动重启一次 ZCode
+
+单独的 `patch-*-*.bat` / `restore-*-*.bat` 依然可用，行为与工具箱内对应任务一致。
+
+### 互不影响保证
+
+三个 `app.asar` 补丁（字体 / 壁纸 / 禁更新）修改的文件互不重叠（字体与壁纸在渲染层 CSS，禁更新在 `out/main/index.js`），且**所有打补丁、换图和还原操作都基于当前 asar 原位进行**：
+
+- 字体补丁：在当前 asar 上等长替换字体栈（不从备份重算全文）；
+- 壁纸补丁：在当前 asar 上「剥旧块 → 加新块」后重打包（不从备份重建整包）；还原时优先原位剥块；
+- 禁更新补丁：在当前 asar 上 25 字节等长替换；还原时优先原位反替换。
+
+因此任意顺序叠加、重打或逐一还原，其余补丁始终保持完好。各补丁的 `*-backup` 备份仅作为「出厂状态兜底还原」使用（当且仅当当前 asar 找不到可识别的补丁痕迹时才会启用，届时会明确提示）。
 
 ---
 
@@ -162,16 +188,16 @@ ZCode 版本升级会覆盖 `resources\glm\zcode.cjs`，标题补丁随之失效
 **打补丁 / 换图**
 
 1. 完全退出 ZCode（托盘图标右键 → Quit）
-2. 双击 `patch-zcode-wallpaper.bat`
+2. 双击 `patch-zcode-wallpaper.bat`（或 `zcode-toolbox.bat` 选 `[3]`）
 3. 菜单选壁纸编号 + 输入纱浓度（0–85，`0` = 纯照片，越大纱越实、照片越淡，默认 60）
 4. 完成后自动重启 ZCode
 
-**随时换图**：直接再次运行 `patch-zcode-wallpaper.bat`，选另一张图或调整纱浓度即可，无需先还原。
+**随时换图**：直接再次运行 `patch-zcode-wallpaper.bat`，选另一张图或调整纱浓度即可，无需先还原。换图/还原基于当前 asar 原位操作，不会影响字体补丁和更新禁用补丁。
 
 **还原**
 
 1. 完全退出 ZCode
-2. 双击 `restore-zcode-wallpaper.bat`，从备份恢复原始 `app.asar`（字节级还原，SHA-256 与原厂一致）并重启 ZCode
+2. 双击 `restore-zcode-wallpaper.bat`（或工具箱选 `[7]`）：优先从当前 asar 原位剥除壁纸块（字体/更新补丁保留）；当前 asar 无可识别壁纸块时才回退备份 verbatim 还原
 
 **工作原理与安全机制**
 
@@ -256,6 +282,7 @@ CSS 按**字体族名**精确匹配，系统里需安装同名族名的字体文
 | `restore-zcode-wallpaper.bat` / `restore-zcode-wallpaper.ps1` | 壁纸还原入口 |
 | `patch-zcode-updates.bat` / `patch-zcode-updates.ps1` | 更新检查禁用补丁入口 |
 | `restore-zcode-updates.bat` / `restore-zcode-updates.ps1` | 更新检测还原入口 |
+| `zcode-toolbox.bat` / `zcode-toolbox.ps1` | 统一工具箱入口（任务清单多选，一次退出检查，最后统一重启） |
 | `wallpapers/` | 内置壁纸（6 张），可自行增删图片文件，菜单自动列出 |
 | `fonts/*.zip` | 字体资源压缩包，需解压安装，见「字体说明」 |
 | `app.asar.font-backup.sha256` / `zcode.cjs.title-backup.sha256` / `app.asar.wallpaper-backup.sha256` / `app.asar.updates-backup.sha256` | 备份 SHA-256 指纹 |
@@ -271,5 +298,5 @@ CSS 按**字体族名**精确匹配，系统里需安装同名族名的字体文
 - **ZCode 升级后标题又不生成了**：升级覆盖了 `resources\glm\zcode.cjs`，见「升级注意」。
 - **ZCode 升级后壁纸消失了**：升级覆盖了 `app.asar` 且渲染层 CSS 文件名随版本变化，先运行 `restore-zcode-wallpaper.bat`（识别不了会拒绝执行），再等工具包适配新版后重打。
 - **壁纸文字看不清**：重新运行 `patch-zcode-wallpaper.bat`，把纱浓度调高（如 70–85）。
-- **又出现绿色「更新」徽标了**：ZCode 升级覆盖了 `app.asar`，更新检测随新版恢复——重新运行 `patch-zcode-updates.bat` 即可。
+- **又出现绿色「更新」徽标了**：ZCode 升级覆盖了 `app.asar`，更新检测随新版恢复——运行 `zcode-toolbox.bat` 勾选需要的补丁（含 `[4]` 禁用更新）一次重打即可；ZCode 升级后所有 asar 补丁都需重打。
 - **还原时提示 backup not found**：本机从未打过对应补丁（备份由补丁脚本生成），或备份文件已被删除。备份丢失时无法用本工具还原，需重新安装 ZCode。

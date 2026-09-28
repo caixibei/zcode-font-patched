@@ -13,6 +13,10 @@
 # - Upgrades v1/v2 patch layouts in place; idempotent when already v3
 # - Exits automatically on success; pauses only on errors
 # Revert with restore-zcode-font.bat
+param(
+    [switch]$NoRestart,   # toolbox mode: do not relaunch ZCode after patching
+    [string]$TargetAsar     # advanced/testing: operate on this app.asar instead of the auto-located one (skips the running check)
+)
 $ErrorActionPreference = 'Stop'
 $latin1 = [System.Text.Encoding]::GetEncoding(28591)  # lossless byte<->char round-trip
 
@@ -136,15 +140,25 @@ if (-not $resourcesDir) {
 $asarPath  = Join-Path $resourcesDir 'app.asar'
 $zcodeExe  = Join-Path (Split-Path $resourcesDir -Parent) 'ZCode.exe'
 if (-not (Test-Path $zcodeExe)) { $zcodeExe = $null }
-Write-Host "target: $asarPath"
+if ($TargetAsar) {
+    # explicit override (toolbox/testing): operate on the given asar and skip
+    # the running-process guard, so the caller controls those concerns
+    $asarPath = $TargetAsar
+    $zcodeExe = $null
+    Write-Host "target (override): $asarPath"
+} else {
+    Write-Host "target: $asarPath"
+}
 
-# 0) ZCode must not be running
-$procs = Get-Process -Name 'ZCode' -ErrorAction SilentlyContinue
-if ($procs) {
-    Write-Host '[X] ZCode is running, app.asar is locked.' -ForegroundColor Red
-    Write-Host '    Quit ZCode first (right-click tray icon -> Quit; clicking X may only minimize to tray).' -ForegroundColor Yellow
-    Read-Host 'Press Enter to exit'
-    exit 1
+# 0) ZCode must not be running (skipped for explicit -AsarPath overrides)
+if (-not $TargetAsar) {
+    $procs = Get-Process -Name 'ZCode' -ErrorAction SilentlyContinue
+    if ($procs) {
+        Write-Host '[X] ZCode is running, app.asar is locked.' -ForegroundColor Red
+        Write-Host '    Quit ZCode first (right-click tray icon -> Quit; clicking X may only minimize to tray).' -ForegroundColor Yellow
+        Read-Host 'Press Enter to exit'
+        exit 1
+    }
 }
 
 # 1) read current asar and detect its state BEFORE touching any backup
@@ -249,10 +263,12 @@ if ($needBackupWrite) {
     Write-Host '[2/4] backup verified (sidecar refreshed)'
 }
 
-# 4) apply v3 stack onto the baseline and write only if content changes
-$patched  = $baseText.Replace($oldSans, $newSans).Replace($oldMono, $newMono)
+# 4) apply v9 stacks onto the CURRENT asar (never onto the backup): the current
+#    asar may already carry other patches (wallpaper block / update-disable), and
+#    rebuilding from the backup would erase them. Equal-length replace in place.
+$patched  = $text.Replace($oldSans, $newSans).Replace($oldMono, $newMono)
 $newBytes = $latin1.GetBytes($patched)
-if ($newBytes.Length -ne $baseBytes.Length) { throw "length changed: $($baseBytes.Length) -> $($newBytes.Length), refusing to write." }
+if ($newBytes.Length -ne $bytes.Length) { throw "length changed: $($bytes.Length) -> $($newBytes.Length), refusing to write." }
 if ((Count-Str $patched $oldSans) -ne 0) { throw 'old sans still present after replace.' }
 if ((Count-Str $patched ($newSans.TrimEnd(';').TrimEnd())) -lt 1) { throw 'new sans missing after replace.' }
 
@@ -260,10 +276,12 @@ if ((Hash-Bytes $newBytes) -eq $asarHash) {
     Write-Host '[3/4] asar already carries the v9 stacks, nothing to write'
 } else {
     [System.IO.File]::WriteAllBytes($asarPath, $newBytes)
-    Write-Host '[3/4] patch written (equal-length, size unchanged)'
+    Write-Host '[3/4] patch written (equal-length, size unchanged, other patches preserved)'
 }
 
-if ($zcodeExe) {
+if ($NoRestart) {
+    Write-Host '[4/4] done (NoRestart: leave ZCode closed).'
+} elseif ($zcodeExe) {
     Start-Process $zcodeExe
     Write-Host '[4/4] ZCode restarted.'
 } else {

@@ -24,6 +24,10 @@
 #   patch touches out/main/index.js only.
 # - Exits automatically on success; pauses only on errors
 # Revert with restore-zcode-updates.bat
+param(
+    [switch]$NoRestart,   # toolbox mode: do not relaunch ZCode after patching
+    [string]$TargetAsar     # advanced/testing: operate on this app.asar instead of the auto-located one (skips the running check)
+)
 $ErrorActionPreference = 'Stop'
 $latin1 = [System.Text.Encoding]::GetEncoding(28591)  # lossless byte<->char round-trip (all patch strings are pure ASCII)
 
@@ -124,15 +128,25 @@ if (-not $resourcesDir) {
 $asarPath  = Join-Path $resourcesDir 'app.asar'
 $zcodeExe  = Join-Path (Split-Path $resourcesDir -Parent) 'ZCode.exe'
 if (-not (Test-Path $zcodeExe)) { $zcodeExe = $null }
-Write-Host "target: $asarPath"
+if ($TargetAsar) {
+    # explicit override (toolbox/testing): operate on the given asar and skip
+    # the running-process guard, so the caller controls those concerns
+    $asarPath = $TargetAsar
+    $zcodeExe = $null
+    Write-Host "target (override): $asarPath"
+} else {
+    Write-Host "target: $asarPath"
+}
 
-# 0) ZCode must not be running (app.asar is locked while the app runs)
-$procs = Get-Process -Name 'ZCode' -ErrorAction SilentlyContinue
-if ($procs) {
-    Write-Host '[X] ZCode is running, app.asar is locked.' -ForegroundColor Red
-    Write-Host '    Quit ZCode first (right-click tray icon -> Quit; clicking X may only minimize to tray).' -ForegroundColor Yellow
-    Read-Host 'Press Enter to exit'
-    exit 1
+# 0) ZCode must not be running (skipped for explicit -AsarPath overrides)
+if (-not $TargetAsar) {
+    $procs = Get-Process -Name 'ZCode' -ErrorAction SilentlyContinue
+    if ($procs) {
+        Write-Host '[X] ZCode is running, app.asar is locked.' -ForegroundColor Red
+        Write-Host '    Quit ZCode first (right-click tray icon -> Quit; clicking X may only minimize to tray).' -ForegroundColor Yellow
+        Read-Host 'Press Enter to exit'
+        exit 1
+    }
 }
 
 # 1) read current asar, extract main bundle, detect state
@@ -198,37 +212,35 @@ if ($needBackupWrite) {
     Write-Host '[2/4] clean backup verified'
 }
 
-# 3) apply the patch onto the clean baseline and write only if content changes
+# 3) apply the patch onto the CURRENT asar in place (never rebuild from the
+#    backup): the current asar may already carry other patches (font stacks /
+#    wallpaper block), and an asar rebuilt from the backup would erase them.
+#    Equal-length 25-byte window replacement; header/offsets untouched.
 if ($state -eq 'patched') {
     Write-Host '[3/4] app.asar already carries the update-disable patch, nothing to write'
 } else {
-    $cleanAsar = Read-Asar $backupPath
-    $cleanMainHit = Get-EntryAndBytes $cleanAsar $mainRelPath
-    if (-not $cleanMainHit) { throw 'backup asar lost the main bundle entry; aborting.' }
-    $cleanText = $latin1.GetString($cleanMainHit.bytes)
-    if ((Count-Str $cleanText $oldFrag) -ne 1) { throw 'clean baseline does not carry the expected fragment; refusing.' }
-    $patchedText = $cleanText.Replace($oldFrag, $newFrag)
+    $patchedText = $mainText.Replace($oldFrag, $newFrag)
     if ((Count-Str $patchedText $oldFrag) -ne 0) { throw 'old fragment still present after replace.' }
     if ((Count-Str $patchedText $newFrag) -ne 1) { throw 'new fragment missing after replace.' }
     $patchedMain = $latin1.GetBytes($patchedText)
-    if ($patchedMain.Length -ne $cleanMainHit.bytes.Length) { throw 'patch must be equal-length; length mismatch, refusing to write.' }
+    if ($patchedMain.Length -ne $mainHit.bytes.Length) { throw 'patch must be equal-length; length mismatch, refusing to write.' }
 
-    $newAsarBytes = [byte[]]$cleanAsar.bytes.Clone()
-    $fileStart = [long]$cleanAsar.contentBase + [long]$cleanMainHit.node.offset
+    $newAsarBytes = [byte[]]$asar.bytes.Clone()
+    $fileStart = [long]$asar.contentBase + [long]$mainHit.node.offset
     [Array]::Copy($patchedMain, 0, $newAsarBytes, $fileStart, $patchedMain.Length)
 
     # self-check: the patch is an equal-length in-place replacement, so the new
-    # asar can only differ from the clean one inside the 25-byte window (the rest
-    # of the buffer is a verbatim clone). Count diffs inside the window (fast),
-    # then confirm globally via .NET SequenceEqual that the buffers are NOT
-    # identical (copy actually landed) without a per-byte PowerShell loop — a
-    # full 322M-iteration loop here used to run for tens of minutes.
+    # asar can only differ from the current one inside the 25-byte window (the
+    # rest of the buffer is a verbatim clone). Count diffs inside the window
+    # (fast), then confirm globally via .NET SequenceEqual that the buffers are
+    # NOT identical (copy actually landed) without a per-byte PowerShell loop —
+    # a full 322M-iteration loop here used to run for tens of minutes.
     $diffs = 0
     for ($i = 0; $i -lt $patchedMain.Length; $i++) {
-        if ($patchedMain[$i] -ne $cleanMainHit.bytes[$i]) { $diffs++ }
+        if ($patchedMain[$i] -ne $mainHit.bytes[$i]) { $diffs++ }
     }
     if ($diffs -ne 17) { throw "unexpected diff byte count inside the patch window: $diffs (expected 17), refusing to write." }
-    if ([System.Linq.Enumerable]::SequenceEqual($newAsarBytes, $cleanAsar.bytes)) { throw 'patched buffer is identical to the clean asar; window copy failed.' }
+    if ([System.Linq.Enumerable]::SequenceEqual($newAsarBytes, $asar.bytes)) { throw 'patched buffer is identical to the current asar; window copy failed.' }
 
     $tmpPath = "$asarPath.tmp"
     [System.IO.File]::WriteAllBytes($tmpPath, $newAsarBytes)
@@ -240,10 +252,12 @@ if ($state -eq 'patched') {
         throw 'rebuilt asar failed self-check; original untouched.'
     }
     Move-Item -Force $tmpPath $asarPath
-    Write-Host '[4/4] patch written (equal-length, 25-byte window, 17 bytes changed).'
+    Write-Host '[4/4] patch written (equal-length, 25-byte window, 17 bytes changed, other patches preserved).'
 }
 
-if ($zcodeExe) {
+if ($NoRestart) {
+    Write-Host 'done (NoRestart: leave ZCode closed).'
+} elseif ($zcodeExe) {
     Start-Process $zcodeExe
     Write-Host 'ZCode restarted.'
 } else {

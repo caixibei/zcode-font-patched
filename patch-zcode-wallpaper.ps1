@@ -22,6 +22,10 @@
 #   appended block, the font patch's signature strings remain intact.
 # - Exits automatically on success; pauses only on errors
 # Revert with restore-zcode-wallpaper.bat
+param(
+    [switch]$NoRestart,   # toolbox mode: do not relaunch ZCode after patching
+    [string]$TargetAsar     # advanced/testing: operate on this app.asar instead of the auto-located one (skips the running check)
+)
 $ErrorActionPreference = 'Stop'
 try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch {}
 Add-Type -AssemblyName System.Drawing
@@ -262,15 +266,25 @@ if (-not $resourcesDir) {
 $asarPath  = Join-Path $resourcesDir 'app.asar'
 $zcodeExe  = Join-Path (Split-Path $resourcesDir -Parent) 'ZCode.exe'
 if (-not (Test-Path $zcodeExe)) { $zcodeExe = $null }
-Write-Host "target: $asarPath"
+if ($TargetAsar) {
+    # explicit override (toolbox/testing): operate on the given asar and skip
+    # the running-process guard, so the caller controls those concerns
+    $asarPath = $TargetAsar
+    $zcodeExe = $null
+    Write-Host "target (override): $asarPath"
+} else {
+    Write-Host "target: $asarPath"
+}
 
-# 0) ZCode must not be running
-$procs = Get-Process -Name 'ZCode' -ErrorAction SilentlyContinue
-if ($procs) {
-    Write-Host '[X] ZCode is running, app.asar is locked.' -ForegroundColor Red
-    Write-Host '    Quit ZCode first (right-click tray icon -> Quit; clicking X may only minimize to tray).' -ForegroundColor Yellow
-    Read-Host 'Press Enter to exit'
-    exit 1
+# 0) ZCode must not be running (skipped for explicit -AsarPath overrides)
+if (-not $TargetAsar) {
+    $procs = Get-Process -Name 'ZCode' -ErrorAction SilentlyContinue
+    if ($procs) {
+        Write-Host '[X] ZCode is running, app.asar is locked.' -ForegroundColor Red
+        Write-Host '    Quit ZCode first (right-click tray icon -> Quit; clicking X may only minimize to tray).' -ForegroundColor Yellow
+        Read-Host 'Press Enter to exit'
+        exit 1
+    }
 }
 
 # 1) read current asar, extract css, detect state
@@ -376,19 +390,21 @@ if ($veilInput -match '^\d+$') { $veilPct = [Math]::Max(0, [Math]::Min(85, [int]
 Write-Host "[3/4] photo: $(Split-Path $photoPath -Leaf), veil $veilPct%"
 $blockBytes = ConvertTo-WallpaperCss $photoPath $veilPct
 
-# 4) rebuild asar from the clean backup with css+block, verify, swap in
-$cleanAsar = Read-Asar $backupPath
-$cleanCssHit = Get-CssEntryAndBytes $cleanAsar $cssRelPath
-if (-not $cleanCssHit) { throw 'backup asar lost the renderer css entry; aborting.' }
-$cleanBytes = $cleanCssHit.bytes
-
+# assemble the css payload from the CURRENT css: strip the old block if present
+# (state 'patched'), then append the new block after a single newline
 $patchedCssBytes = New-Object byte[] ($cleanBytes.Length + 1 + $blockBytes.Length)
 [Array]::Copy($cleanBytes, 0, $patchedCssBytes, 0, $cleanBytes.Length)
 $patchedCssBytes[$cleanBytes.Length] = 0x0A
 [Array]::Copy($blockBytes, 0, $patchedCssBytes, $cleanBytes.Length + 1, $blockBytes.Length)
 
+# 4) rebuild the asar from the CURRENT asar with the new css block swapped in.
+#    Building from the CURRENT file (not the backup) keeps any other patches
+#    (font stacks / update-disable) that were applied after the backup; the
+#    backup is only kept as a factory-restore fallback for restore-zcode-wallpaper.
+#    Note: the font/update patches live in a different file (out/main/index.js)
+#    and other css assets; the block-swap below touches only the wallpaper css.
 $tmpPath = "$asarPath.tmp"
-Write-Asar $cleanAsar $cssRelPath $patchedCssBytes $tmpPath
+Write-Asar $asar $cssRelPath $patchedCssBytes $tmpPath
 
 # self-check: tmp parses, css holds exactly one block, old file intact until swap
 $tmpAsar = Read-Asar $tmpPath
@@ -408,9 +424,11 @@ if ($tmpText.IndexOf($markerEnd) -le $tmpText.IndexOf($markerBegin)) {
 }
 
 Move-Item -Force $tmpPath $asarPath
-Write-Host '[4/4] patch written (asar rebuilt).'
+Write-Host '[4/4] patch written (asar rebuilt from current; other patches preserved).'
 
-if ($zcodeExe) {
+if ($NoRestart) {
+    Write-Host 'done (NoRestart: leave ZCode closed).'
+} elseif ($zcodeExe) {
     Start-Process $zcodeExe
     Write-Host 'ZCode restarted.'
 } else {

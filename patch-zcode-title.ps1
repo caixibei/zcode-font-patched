@@ -20,6 +20,9 @@
 # - Upgrades v1/v2 in place; idempotent when already patched
 # - Exits automatically on success; pauses only on errors
 # Revert with restore-zcode-title.bat
+param(
+    [switch]$NoRestart   # toolbox mode: do not relaunch ZCode after patching
+)
 $ErrorActionPreference = 'Stop'
 $latin1 = [System.Text.Encoding]::GetEncoding(28591)  # lossless byte<->char round-trip (all patch strings are pure ASCII)
 
@@ -220,7 +223,9 @@ if ((Hash-Bytes $newBytes) -eq $cjsHash) {
     Write-Host "[3/4] patch written (ZCode $sigTag; eligibility equal-length; language rule +$langDelta bytes)"
 }
 
-if ($zcodeExe) {
+if ($NoRestart) {
+    Write-Host '[4/4] done (NoRestart: leave ZCode closed).'
+} elseif ($zcodeExe) {
     Start-Process $zcodeExe
     Write-Host '[4/4] ZCode restarted.'
 } else {

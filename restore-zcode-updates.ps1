@@ -5,6 +5,10 @@
 #   asar when the backup is missing/invalid (equal-length, header untouched).
 # - Coexists with the font/wallpaper patches: those live in renderer CSS, this
 #   patch lives in out/main/index.js only.
+param(
+    [switch]$NoRestart,   # toolbox mode: do not relaunch ZCode after restoring
+    [string]$TargetAsar     # advanced/testing: operate on this app.asar instead of the auto-located one (skips the running check)
+)
 $ErrorActionPreference = 'Stop'
 $latin1 = [System.Text.Encoding]::GetEncoding(28591)
 
@@ -93,14 +97,24 @@ if (-not $resourcesDir) {
 $asarPath = Join-Path $resourcesDir 'app.asar'
 $zcodeExe = Join-Path (Split-Path $resourcesDir -Parent) 'ZCode.exe'
 if (-not (Test-Path $zcodeExe)) { $zcodeExe = $null }
-Write-Host "target: $asarPath"
+if ($TargetAsar) {
+    # explicit override (toolbox/testing): operate on the given asar and skip
+    # the running-process guard, so the caller controls those concerns
+    $asarPath = $TargetAsar
+    $zcodeExe = $null
+    Write-Host "target (override): $asarPath"
+} else {
+    Write-Host "target: $asarPath"
+}
 
-$procs = Get-Process -Name 'ZCode' -ErrorAction SilentlyContinue
-if ($procs) {
-    Write-Host '[X] ZCode is running, app.asar is locked.' -ForegroundColor Red
-    Write-Host '    Quit ZCode first (right-click tray icon -> Quit; clicking X may only minimize to tray).' -ForegroundColor Yellow
-    Read-Host 'Press Enter to exit'
-    exit 1
+if (-not $TargetAsar) {
+    $procs = Get-Process -Name 'ZCode' -ErrorAction SilentlyContinue
+    if ($procs) {
+        Write-Host '[X] ZCode is running, app.asar is locked.' -ForegroundColor Red
+        Write-Host '    Quit ZCode first (right-click tray icon -> Quit; clicking X may only minimize to tray).' -ForegroundColor Yellow
+        Read-Host 'Press Enter to exit'
+        exit 1
+    }
 }
 
 # current state
@@ -113,7 +127,9 @@ $cNew = Count-Str $mainText $newFrag
 
 if ($cNew -eq 0 -and $cOld -eq 1) {
     Write-Host '[1/3] no update-disable patch present, nothing to restore.'
-    if ($zcodeExe) { Start-Process $zcodeExe; Write-Host 'ZCode restarted.' }
+    if ($NoRestart) {
+        Write-Host 'done (NoRestart: leave ZCode closed).'
+    } elseif ($zcodeExe) { Start-Process $zcodeExe; Write-Host 'ZCode restarted.' }
     Read-Host 'Press Enter to exit'
     exit 0
 }
@@ -122,44 +138,56 @@ if ($cNew -ne 1 -or $cOld -ne 0) {
 }
 Write-Host '[1/3] state: patched'
 
-# preferred: restore the clean backup asar verbatim
+# preferred: reverse the 25-byte fragment in the CURRENT asar in place — the
+# state gate above guarantees the fragment is present exactly once, so this
+# always applies and preserves any other patches (font stacks / wallpaper block)
+# regardless of backup age
 $restored = $false
-if (Test-Path $backupPath) {
-    $sidecarOk = $false
-    if (Test-Path $hashPath) {
-        $expect = (Get-Content $hashPath -ErrorAction SilentlyContinue)
-        $actual = (Get-FileHash $backupPath -Algorithm SHA256).Hash
-        $sidecarOk = ($expect -and ($actual -eq $expect.Trim()))
-    }
-    if ($sidecarOk) {
-        $bk = Read-Asar $backupPath
-        $bkMain = Get-EntryAndBytes $bk $mainRelPath
-        if ($bkMain -and (Count-Str ($latin1.GetString($bkMain.bytes)) $oldFrag) -eq 1) {
-            Copy-Item -Force $backupPath $asarPath
-            $restored = $true
-            Write-Host '[2/3] restored from clean backup (verbatim)'
-        }
-    }
+$patchedMain = $latin1.GetBytes($mainText.Replace($newFrag, $oldFrag))
+if ($patchedMain.Length -ne $mainHit.bytes.Length) { throw 'length mismatch on reverse replacement; refusing.' }
+$newAsarBytes = [byte[]]$asar.bytes.Clone()
+$fileStart = [long]$asar.contentBase + [long]$mainHit.node.offset
+[Array]::Copy($patchedMain, 0, $newAsarBytes, $fileStart, $patchedMain.Length)
+$tmpPath = "$asarPath.tmp"
+[System.IO.File]::WriteAllBytes($tmpPath, $newAsarBytes)
+$chk = Read-Asar $tmpPath
+$chkMain = Get-EntryAndBytes $chk $mainRelPath
+if ($chkMain -and (Count-Str ($latin1.GetString($chkMain.bytes)) $oldFrag) -eq 1) {
+    Move-Item -Force $tmpPath $asarPath
+    $restored = $true
+    Write-Host '[2/3] fragment reversed in place (other patches preserved)'
+} else {
+    Remove-Item $tmpPath -ErrorAction SilentlyContinue
+    throw 'in-place reverse failed self-check; asar left in current state.'
 }
 
-# fallback: reverse-replace the 25-byte fragment in place (keeps font/wallpaper patches)
+# fallback: restore the clean backup asar verbatim (factory state) — only used
+# when the in-place path threw above, which the state gate makes unreachable
 if (-not $restored) {
-    Write-Host '[2/3] backup missing/invalid, reverse-replacing fragment in place'
-    $patchedMain = $latin1.GetBytes($mainText.Replace($newFrag, $oldFrag))
-    if ($patchedMain.Length -ne $mainHit.bytes.Length) { throw 'length mismatch on reverse replacement; refusing.' }
-    $newAsarBytes = [byte[]]$asar.bytes.Clone()
-    $fileStart = [long]$asar.contentBase + [long]$mainHit.node.offset
-    [Array]::Copy($patchedMain, 0, $newAsarBytes, $fileStart, $patchedMain.Length)
-    $tmpPath = "$asarPath.tmp"
-    [System.IO.File]::WriteAllBytes($tmpPath, $newAsarBytes)
-    $chk = Read-Asar $tmpPath
-    $chkMain = Get-EntryAndBytes $chk $mainRelPath
-    if (-not $chkMain -or (Count-Str ($latin1.GetString($chkMain.bytes)) $oldFrag) -ne 1) {
-        Remove-Item $tmpPath -ErrorAction SilentlyContinue
-        throw 'in-place restore failed self-check; asar left in current state.'
+    Write-Host '[2/3] falling back to backup restore'
+    if (Test-Path $backupPath) {
+        $sidecarOk = $false
+        if (Test-Path $hashPath) {
+            $expect = (Get-Content $hashPath -ErrorAction SilentlyContinue)
+            $actual = (Get-FileHash $backupPath -Algorithm SHA256).Hash
+            $sidecarOk = ($expect -and ($actual -eq $expect.Trim()))
+        }
+        if ($sidecarOk) {
+            $bk = Read-Asar $backupPath
+            $bkMain = Get-EntryAndBytes $bk $mainRelPath
+            if ($bkMain -and (Count-Str ($latin1.GetString($bkMain.bytes)) $oldFrag) -eq 1) {
+                Copy-Item -Force $backupPath $asarPath
+                $restored = $true
+                Write-Host '     restored from clean backup (verbatim factory state)'
+                Write-Host '     (note: patches applied after that backup was taken are gone with it)'
+            }
+        }
     }
-    Move-Item -Force $tmpPath $asarPath
-    Write-Host '     (note: fragment-only restore; updates backup was not available)'
+    if (-not $restored) {
+        Write-Host '[X] no valid backup available and the in-place path failed.' -ForegroundColor Red
+        Read-Host 'Press Enter to exit'
+        exit 1
+    }
 }
 
 # verify
@@ -170,7 +198,9 @@ if (-not $chkMain -or (Count-Str ($latin1.GetString($chkMain.bytes)) $newFrag) -
 }
 Write-Host '[3/3] verified: update-disable patch removed.'
 
-if ($zcodeExe) {
+if ($NoRestart) {
+    Write-Host 'done (NoRestart: leave ZCode closed).'
+} elseif ($zcodeExe) {
     Start-Process $zcodeExe
     Write-Host 'ZCode restarted.'
 } else {

@@ -1,6 +1,9 @@
 # Revert ZCode session title patch (v3, portable): restore clean zcode.cjs from backup and restart
 # Auto-locates ZCode install; every probe is fault-tolerant.
 # Signature table mirrors patch-zcode-title.ps1 (3.14.1 / 3.12.3).
+param(
+    [switch]$NoRestart   # toolbox mode: do not relaunch ZCode after restoring
+)
 $ErrorActionPreference = 'Stop'
 
 $backupPath = Join-Path $PSScriptRoot 'zcode.cjs.title-backup'
@@ -110,7 +113,9 @@ if (-not $matched) {
 
 Copy-Item $backupPath $cjsPath -Force
 Write-Host '[OK] zcode.cjs restored.'
-if ($zcodeExe) {
+if ($NoRestart) {
+    Write-Host '[OK] done (NoRestart: leave ZCode closed).'
+} elseif ($zcodeExe) {
     Start-Process $zcodeExe
     Write-Host '[OK] ZCode restarted.'
 } else {

@@ -1,11 +1,14 @@
 ﻿# ZCode desktop wallpaper restore (v1, portable) - save as UTF-8 WITH BOM
-# - Restores app.asar from the clean backup created by patch-zcode-wallpaper.ps1
-#   (app.asar.wallpaper-backup + .sha256 sidecar).
-# - Falls back to stripping the wallpaper block from the current asar when the
-#   backup is missing/invalid (block-only removal; safe because the patch never
-#   modifies bytes outside the block).
-# - Coexists with the font patch: restoring the wallpaper keeps the font stacks
-#   (they live before the wallpaper block in the same CSS).
+# - Removes the wallpaper block from the CURRENT asar in place (preferred): this
+#   preserves any other patches (font stacks / update disable) regardless of
+#   when the backup was taken.
+# - Falls back to restoring app.asar verbatim from the clean backup created by
+#   patch-zcode-wallpaper.ps1 (app.asar.wallpaper-backup + .sha256 sidecar) when
+#   the current asar carries no recognizable wallpaper block (factory fallback).
+param(
+    [switch]$NoRestart,   # toolbox mode: do not relaunch ZCode after restoring
+    [string]$TargetAsar     # advanced/testing: operate on this app.asar instead of the auto-located one (skips the running check)
+)
 $ErrorActionPreference = 'Stop'
 try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch {}
 Add-Type -AssemblyName System.Drawing
@@ -180,14 +183,24 @@ if (-not $resourcesDir) {
 $asarPath = Join-Path $resourcesDir 'app.asar'
 $zcodeExe = Join-Path (Split-Path $resourcesDir -Parent) 'ZCode.exe'
 if (-not (Test-Path $zcodeExe)) { $zcodeExe = $null }
-Write-Host "target: $asarPath"
+if ($TargetAsar) {
+    # explicit override (toolbox/testing): operate on the given asar and skip
+    # the running-process guard, so the caller controls those concerns
+    $asarPath = $TargetAsar
+    $zcodeExe = $null
+    Write-Host "target (override): $asarPath"
+} else {
+    Write-Host "target: $asarPath"
+}
 
-$procs = Get-Process -Name 'ZCode' -ErrorAction SilentlyContinue
-if ($procs) {
-    Write-Host '[X] ZCode is running, app.asar is locked.' -ForegroundColor Red
-    Write-Host '    Quit ZCode first (right-click tray icon -> Quit; clicking X may only minimize to tray).' -ForegroundColor Yellow
-    Read-Host 'Press Enter to exit'
-    exit 1
+if (-not $TargetAsar) {
+    $procs = Get-Process -Name 'ZCode' -ErrorAction SilentlyContinue
+    if ($procs) {
+        Write-Host '[X] ZCode is running, app.asar is locked.' -ForegroundColor Red
+        Write-Host '    Quit ZCode first (right-click tray icon -> Quit; clicking X may only minimize to tray).' -ForegroundColor Yellow
+        Read-Host 'Press Enter to exit'
+        exit 1
+    }
 }
 
 # current state
@@ -200,7 +213,9 @@ $cEnd   = Count-Str $cssText $markerEnd
 
 if ($cBegin -eq 0 -and $cEnd -eq 0) {
     Write-Host '[1/3] no wallpaper patch present, nothing to restore.'
-    if ($zcodeExe) { Start-Process $zcodeExe; Write-Host 'ZCode restarted.' }
+    if ($NoRestart) {
+        Write-Host 'done (NoRestart: leave ZCode closed).'
+    } elseif ($zcodeExe) { Start-Process $zcodeExe; Write-Host 'ZCode restarted.' }
     Read-Host 'Press Enter to exit'
     exit 0
 }
@@ -209,25 +224,11 @@ if ($cBegin -ne 1 -or $cEnd -ne 1) {
 }
 Write-Host '[1/3] state: patched'
 
-# preferred: restore the clean backup asar verbatim
+# preferred: strip the block from the CURRENT asar (keeps font/update patches
+# regardless of backup age); the verbatim backup is only a factory fallback
 $restored = $false
-if (Test-Path $backupPath) {
-    $sidecarOk = $false
-    if (Test-Path $hashPath) {
-        $expect = (Get-Content $hashPath -ErrorAction SilentlyContinue)
-        $actual = (Get-FileHash $backupPath -Algorithm SHA256).Hash
-        $sidecarOk = ($expect -and ($actual -eq $expect.Trim()))
-    }
-    if ($sidecarOk) {
-        Copy-Item -Force $backupPath $asarPath
-        $restored = $true
-        Write-Host '[2/3] restored from clean backup (verbatim)'
-    }
-}
-
-# fallback: strip the block from the current asar (keeps font patch etc.)
-if (-not $restored) {
-    Write-Host '[2/3] backup missing/invalid, stripping wallpaper block in place'
+if ($cBegin -eq 1 -and $cEnd -eq 1) {
+    Write-Host '[2/3] stripping wallpaper block in place (other patches preserved)'
     $idx = $cssText.IndexOf($markerBegin)
     $endIdx = $cssText.IndexOf($markerEnd) + $markerEnd.Length
     $cleanText = ($cssText.Substring(0, $idx) + $cssText.Substring($endIdx))
@@ -239,7 +240,31 @@ if (-not $restored) {
     $tmpPath = "$asarPath.tmp"
     Write-Asar $asar $cssRelPath $cleanBytes $tmpPath
     Move-Item -Force $tmpPath $asarPath
-    Write-Host '     (note: block-only restore; wallpaper backup was not available)'
+    $restored = $true
+}
+
+# fallback: restore the clean backup asar verbatim (factory state)
+if (-not $restored) {
+    Write-Host '[2/3] no recognizable wallpaper block in current asar; trying backup restore'
+    if (Test-Path $backupPath) {
+        $sidecarOk = $false
+        if (Test-Path $hashPath) {
+            $expect = (Get-Content $hashPath -ErrorAction SilentlyContinue)
+            $actual = (Get-FileHash $backupPath -Algorithm SHA256).Hash
+            $sidecarOk = ($expect -and ($actual -eq $expect.Trim()))
+        }
+        if ($sidecarOk) {
+            Copy-Item -Force $backupPath $asarPath
+            $restored = $true
+            Write-Host '     restored from clean backup (verbatim factory state)'
+            Write-Host '     (note: any patches applied after that backup was taken are gone with it)'
+        }
+    }
+    if (-not $restored) {
+        Write-Host '[X] nothing to restore from: current asar has no wallpaper block and no valid backup exists.' -ForegroundColor Red
+        Read-Host 'Press Enter to exit'
+        exit 1
+    }
 }
 
 # verify
@@ -251,7 +276,9 @@ if ((Count-Str $chkText $markerBegin) -ne 0) {
 }
 Write-Host '[3/3] verified: wallpaper block removed.'
 
-if ($zcodeExe) {
+if ($NoRestart) {
+    Write-Host 'done (NoRestart: leave ZCode closed).'
+} elseif ($zcodeExe) {
     Start-Process $zcodeExe
     Write-Host 'ZCode restarted.'
 } else {
