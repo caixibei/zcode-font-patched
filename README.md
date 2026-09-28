@@ -183,7 +183,7 @@ ZCode 版本升级会覆盖 `resources\glm\zcode.cjs`，标题补丁随之失效
 
 把 ZCode 桌面端窗口根背景（深/浅色主题下的纯色底）替换为一张照片：照片经等比缩放（长边 1920px）+ JPEG 压缩后以 data URI 形式内嵌进渲染层 CSS，整窗可见；聊天内容区叠加一层跟随主题色的半透明「纱」，纱越薄照片越清晰，越厚文字越易读。
 
-**内置壁纸**：`wallpapers/` 目录自带 7 张（五路财神 / 仙逆佳人 / 水墨武士 / 女仆 / 白衬衫 / 动漫阳台 / 动感少女），也可在菜单选 `[0]` 输入任意本机图片路径（支持中文路径）。
+**内置壁纸**：`wallpapers/` 目录自带 8 张（五路财神 / 仙逆佳人 / 水墨武士 / 女仆 / 白衬衫 / 动漫阳台 / 动感少女 / 水墨日出），也可在菜单选 `[0]` 输入任意本机图片路径（支持中文路径）。
 
 **打补丁 / 换图**
 
@@ -283,7 +283,7 @@ CSS 按**字体族名**精确匹配，系统里需安装同名族名的字体文
 | `patch-zcode-updates.bat` / `patch-zcode-updates.ps1` | 更新检查禁用补丁入口 |
 | `restore-zcode-updates.bat` / `restore-zcode-updates.ps1` | 更新检测还原入口 |
 | `zcode-toolbox.bat` / `zcode-toolbox.ps1` | 统一工具箱入口（任务清单多选，一次退出检查，最后统一重启） |
-| `wallpapers/` | 内置壁纸（7 张），可自行增删图片文件，菜单自动列出 |
+| `wallpapers/` | 内置壁纸（8 张），可自行增删图片文件，菜单自动列出 |
 | `fonts/*.zip` | 字体资源压缩包，需解压安装，见「字体说明」 |
 | `app.asar.font-backup.sha256` / `zcode.cjs.title-backup.sha256` / `app.asar.wallpaper-backup.sha256` / `app.asar.updates-backup.sha256` | 备份 SHA-256 指纹 |
 | `app.asar.font-backup` / `zcode.cjs.title-backup` / `app.asar.wallpaper-backup` / `app.asar.updates-backup` | 首次打补丁时在本机生成的原始文件备份（体积大，已被 `.gitignore` 排除，不入库） |
