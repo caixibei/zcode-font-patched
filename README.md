@@ -20,14 +20,15 @@
 ![GitHub code size](https://img.shields.io/github/languages/code-size/caixibei/zcode-font-patched)
 ![GitHub file count](https://img.shields.io/github/directory-file-count/caixibei/zcode-font-patched)
 
-ZCode 桌面客户端补丁工具包，包含四个独立补丁与一个统一工具箱入口：
+ZCode 桌面客户端补丁工具包，包含五个独立补丁与一个统一工具箱入口：
 
 1. **UI 字体美化补丁**（`patch-zcode-font`）——替换界面字体栈
 2. **会话标题自动生成修复补丁**（`patch-zcode-title`）——恢复 3.12.3 中失效的侧边栏会话标题自动提炼
 3. **桌面壁纸补丁**（`patch-zcode-wallpaper`）——把窗口根背景换成自选照片（半透明主题色纱罩保证可读性）
 4. **更新检查禁用补丁**（`patch-zcode-updates`）——彻底关闭自动更新检测，侧边栏不再出现绿色「更新」徽标；想升级时自行下载安装包
+5. **定时任务时区修复补丁**（`patch-zcode-timezone`）——让 ZCode 的 cron 定时任务按上海时间（UTC+8）触发，修复系统级 `TZ=UTC` 环境变量造成的 8 小时偏差
 
-**统一工具箱**（`zcode-toolbox.bat`）：把 4 个补丁 + 4 个还原做成一张任务清单，支持一次输入多个任务编号（如 `1 3` 或 `1,3,4`）按序执行；ZCode 退出检查只做一次，全部完成后统一重启一次。四个补丁全部基于**当前 asar 原位操作**，打/还原/换图互不影响（详见「互不影响保证」）。
+**统一工具箱**（`zcode-toolbox.bat`）：把 5 个补丁 + 5 个还原做成一张任务清单，支持一次输入多个任务编号（如 `1 3` 或 `1,3,4`）按序执行；ZCode 退出检查只做一次，全部完成后统一重启一次。四个 asar 补丁（字体 / 标题 / 壁纸 / 禁更新）全部基于**当前 asar 原位操作**，打/还原/换图互不影响（详见「互不影响保证」）；时区补丁不改动 ZCode 程序文件，只调整用户环境变量（见「五、定时任务时区修复补丁」）。
 
 ---
 
@@ -36,8 +37,8 @@ ZCode 桌面客户端补丁工具包，包含四个独立补丁与一个统一�
 1. 完全退出 ZCode（托盘图标右键 → Quit）
 2. 双击 `zcode-toolbox.bat`
 3. 在菜单里输入任务编号（可多选，空格或逗号分隔）：
-   - `[1]` 字体补丁 `[2]` 标题修复 `[3]` 壁纸补丁 `[4]` 禁用更新检查
-   - `[5]` 还原字体 `[6]` 还原标题 `[7]` 还原壁纸 `[8]` 恢复更新检查
+   - `[1]` 字体补丁 `[2]` 标题修复 `[3]` 壁纸补丁 `[4]` 禁用更新检查 `[9]` 时区修复
+   - `[5]` 还原字体 `[6]` 还原标题 `[7]` 还原壁纸 `[8]` 恢复更新检查 `[10]` 还原时区
 4. 确认后按序执行；某任务失败立即停止后续任务（已完成的任务保持其状态），修好后再跑一次即可
 5. 全部成功后自动重启一次 ZCode
 
@@ -238,6 +239,35 @@ ZCode 桌面端启动时会检查更新并每小时轮询一次，检测到新�
 
 ---
 
+## 五、定时任务时区修复补丁
+
+让 ZCode 的定时任务（cron 自动化）按**上海时间（UTC+8）**解释和触发。补丁不改动 ZCode 程序文件，也不需要提前退出 ZCode。
+
+### 问题背景
+
+- 本机 Windows 系统时区是正确的「中国标准时间」，但**系统级环境变量 `TZ=UTC`** 把它覆盖了；
+- ZCode 基于 Electron/Node.js，解析本地时区时**优先读 `TZ` 环境变量**，于是整个 ZCode 进程（包括 cron 定时任务的「本地时区」）被当成 UTC，定时任务比上海时间提前 8 小时触发；
+- 验证方法：ZCode 会话内 `echo $TZ` 输出 `UTC`；`node -e "console.log(Intl.DateTimeFormat().resolvedOptions().timeZone)"` 输出 `UTC` 而非 `Asia/Shanghai`。
+
+### 使用方法
+
+1. 双击 `patch-zcode-timezone.bat`（或 `zcode-toolbox.bat` 选 `[9]`）
+2. 脚本依次：诊断三层时区来源 → 记录还原点（`zcode-timezone-state.json`）→ 设置**用户级**环境变量 `TZ=Asia/Shanghai`（用户级变量会遮蔽系统级 `TZ=UTC`，无需管理员权限，系统级原值保持不动）
+3. 设置完成后**退出并重启 ZCode 才生效**：脚本检测到 ZCode 正在运行时会提示手动重启（托盘图标右键 → Quit 后再启动）；ZCode 未运行时自动拉起
+
+### 生效范围与说明
+
+- 对当前用户**新启动的进程**生效；打补丁之前已经开着的窗口（正在运行的 ZCode、旧终端）保持旧时区，重开后恢复；
+- ZCode 重启后，新创建的定时任务按上海时间解释；
+- Git Bash 的 `date` 命令不识别 `Asia/Shanghai`（MSYS 运行时无 zoneinfo），仍显示 GMT——这只是 Git Bash 的显示行为，与 ZCode 定时任务无关；
+- 重跑此补丁是幂等的（已打过则不重复写）。
+
+### 还原
+
+双击 `restore-zcode-timezone.bat`（或工具箱选 `[10]`）：按还原点恢复用户级 `TZ` 的旧值（原本未设置则删除该变量），系统级 `TZ=UTC` 重新生效。还原后重启 ZCode。
+
+---
+
 ## 字体说明
 
 `fonts/` 目录附带全部字体资源压缩包，需解压后安装：
@@ -282,6 +312,9 @@ CSS 按**字体族名**精确匹配，系统里需安装同名族名的字体文
 | `restore-zcode-wallpaper.bat` / `restore-zcode-wallpaper.ps1` | 壁纸还原入口 |
 | `patch-zcode-updates.bat` / `patch-zcode-updates.ps1` | 更新检查禁用补丁入口 |
 | `restore-zcode-updates.bat` / `restore-zcode-updates.ps1` | 更新检测还原入口 |
+| `patch-zcode-timezone.bat` / `patch-zcode-timezone.ps1` | 定时任务时区修复入口（设置用户级 `TZ=Asia/Shanghai`，不改 ZCode 程序文件） |
+| `restore-zcode-timezone.bat` / `restore-zcode-timezone.ps1` | 时区设置还原入口 |
+| `zcode-timezone-state.json` | 时区补丁的还原点（记录打补丁前的用户级 TZ 值；还原时自动清理） |
 | `zcode-toolbox.bat` / `zcode-toolbox.ps1` | 统一工具箱入口（任务清单多选，一次退出检查，最后统一重启） |
 | `wallpapers/` | 内置壁纸（8 张），可自行增删图片文件，菜单自动列出 |
 | `fonts/*.zip` | 字体资源压缩包，需解压安装，见「字体说明」 |
@@ -300,3 +333,4 @@ CSS 按**字体族名**精确匹配，系统里需安装同名族名的字体文
 - **壁纸文字看不清**：重新运行 `patch-zcode-wallpaper.bat`，把纱浓度调高（如 70–85）。
 - **又出现绿色「更新」徽标了**：ZCode 升级覆盖了 `app.asar`，更新检测随新版恢复——运行 `zcode-toolbox.bat` 勾选需要的补丁（含 `[4]` 禁用更新）一次重打即可；ZCode 升级后所有 asar 补丁都需重打。
 - **还原时提示 backup not found**：本机从未打过对应补丁（备份由补丁脚本生成），或备份文件已被删除。备份丢失时无法用本工具还原，需重新安装 ZCode。
+- **定时任务还是按 UTC 触发**：时区补丁只对**补丁之后启动**的进程生效——先运行 `patch-zcode-timezone.bat`，再完全退出并重启 ZCode；仍不生效时在 PowerShell 里执行 `[Environment]::GetEnvironmentVariable('TZ','User')`，应输出 `Asia/Shanghai`。Git Bash 的 `date` 显示 GMT 属正常现象（MSYS 不识别 IANA 时区名），不代表补丁失效。

@@ -1,5 +1,5 @@
 # ZCode Patch Toolbox (v1, portable) - unified menu for all patch/restore tasks
-# - Lists the 4 patches (apply) and 4 restores as a picklist; the user selects
+# - Lists the 5 patches (apply) and 5 restores as a picklist; the user selects
 #   ONE OR MANY tasks (e.g. "1 3" or "1,3"), they run in ascending order.
 # - ZCode running-check happens ONCE up front; ZCode (if found) is restarted
 #   ONCE at the end when any selected task actually patched something.
@@ -19,10 +19,12 @@ $tasks = @(
     [pscustomobject]@{ Id = '2'; Kind = 'patch';   Label = 'session title fix';        Script = 'patch-zcode-title.ps1' },
     [pscustomobject]@{ Id = '3'; Kind = 'patch';   Label = 'wallpaper patch';          Script = 'patch-zcode-wallpaper.ps1' },
     [pscustomobject]@{ Id = '4'; Kind = 'patch';   Label = 'disable update checks';    Script = 'patch-zcode-updates.ps1' },
+    [pscustomobject]@{ Id = '9'; Kind = 'patch';   Label = 'Shanghai timezone fix';    Script = 'patch-zcode-timezone.ps1' },
     [pscustomobject]@{ Id = '5'; Kind = 'restore'; Label = 'restore font';             Script = 'restore-zcode-font.ps1' },
     [pscustomobject]@{ Id = '6'; Kind = 'restore'; Label = 'restore title fix';        Script = 'restore-zcode-title.ps1' },
     [pscustomobject]@{ Id = '7'; Kind = 'restore'; Label = 'restore wallpaper';        Script = 'restore-zcode-wallpaper.ps1' },
-    [pscustomobject]@{ Id = '8'; Kind = 'restore'; Label = 're-enable update checks';  Script = 'restore-zcode-updates.ps1' }
+    [pscustomobject]@{ Id = '8'; Kind = 'restore'; Label = 're-enable update checks';  Script = 'restore-zcode-updates.ps1' },
+    [pscustomobject]@{ Id = '10'; Kind = 'restore'; Label = 'restore timezone setting'; Script = 'restore-zcode-timezone.ps1' }
 )
 
 function Show-Menu {
