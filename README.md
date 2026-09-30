@@ -1,24 +1,24 @@
-# zcode-font-patch
+# zcode-modkit
 
 ![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D4?logo=windows11&logoColor=white)
 ![PowerShell](https://img.shields.io/badge/PowerShell-5.1%2B-5391FE?logo=powershell&logoColor=white)
-![GitHub top language](https://img.shields.io/github/languages/top/caixibei/zcode-font-patched)
+![GitHub top language](https://img.shields.io/github/languages/top/caixibei/zcode-modkit)
 
-![GitHub stars](https://img.shields.io/github/stars/caixibei/zcode-font-patched?style=social)
-![GitHub forks](https://img.shields.io/github/forks/caixibei/zcode-font-patched?style=social)
-![GitHub watchers](https://img.shields.io/github/watchers/caixibei/zcode-font-patched?style=social)
-![GitHub contributors](https://img.shields.io/github/contributors/caixibei/zcode-font-patched)
+![GitHub stars](https://img.shields.io/github/stars/caixibei/zcode-modkit?style=social)
+![GitHub forks](https://img.shields.io/github/forks/caixibei/zcode-modkit?style=social)
+![GitHub watchers](https://img.shields.io/github/watchers/caixibei/zcode-modkit?style=social)
+![GitHub contributors](https://img.shields.io/github/contributors/caixibei/zcode-modkit)
 
-![GitHub issues](https://img.shields.io/github/issues/caixibei/zcode-font-patched)
-![GitHub closed issues](https://img.shields.io/github/issues-closed/caixibei/zcode-font-patched?color=success)
-![GitHub PRs](https://img.shields.io/github/issues-pr/caixibei/zcode-font-patched)
-![GitHub closed PRs](https://img.shields.io/github/issues-pr-closed/caixibei/zcode-font-patched?color=success)
+![GitHub issues](https://img.shields.io/github/issues/caixibei/zcode-modkit)
+![GitHub closed issues](https://img.shields.io/github/issues-closed/caixibei/zcode-modkit?color=success)
+![GitHub PRs](https://img.shields.io/github/issues-pr/caixibei/zcode-modkit)
+![GitHub closed PRs](https://img.shields.io/github/issues-pr-closed/caixibei/zcode-modkit?color=success)
 
-![GitHub last commit](https://img.shields.io/github/last-commit/caixibei/zcode-font-patched)
-![GitHub commit activity](https://img.shields.io/github/commit-activity/m/caixibei/zcode-font-patched)
-![GitHub repo size](https://img.shields.io/github/repo-size/caixibei/zcode-font-patched)
-![GitHub code size](https://img.shields.io/github/languages/code-size/caixibei/zcode-font-patched)
-![GitHub file count](https://img.shields.io/github/directory-file-count/caixibei/zcode-font-patched)
+![GitHub last commit](https://img.shields.io/github/last-commit/caixibei/zcode-modkit)
+![GitHub commit activity](https://img.shields.io/github/commit-activity/m/caixibei/zcode-modkit)
+![GitHub repo size](https://img.shields.io/github/repo-size/caixibei/zcode-modkit)
+![GitHub code size](https://img.shields.io/github/languages/code-size/caixibei/zcode-modkit)
+![GitHub file count](https://img.shields.io/github/directory-file-count/caixibei/zcode-modkit)
 
 ZCode 桌面客户端补丁工具包，包含五个独立补丁与一个统一工具箱入口：
 
